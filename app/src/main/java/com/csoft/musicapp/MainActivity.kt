@@ -14,11 +14,16 @@ import androidx.drawerlayout.widget.DrawerLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import android.view.View
+import android.Manifest
+import android.content.pm.PackageManager
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.MediaMetadata
 import com.google.android.exoplayer2.ui.PlayerView
 import com.google.android.exoplayer2.ui.PlayerNotificationManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
 import com.google.android.material.navigation.NavigationView
 import androidx.documentfile.provider.DocumentFile
 
@@ -69,32 +74,22 @@ class MainActivity : AppCompatActivity() {
         player = ExoPlayer.Builder(this).build()
         playerView.player = player
 
-        // Create PlayerNotificationManager using Builder
-        val mediaDescriptionAdapter = object : PlayerNotificationManager.MediaDescriptionAdapter {
-            override fun getCurrentContentTitle(player: com.google.android.exoplayer2.Player): CharSequence {
-                return player.currentMediaItem?.mediaMetadata?.title ?: "MusicApp"
-            }
-
-            override fun createCurrentContentIntent(player: com.google.android.exoplayer2.Player): android.app.PendingIntent? {
-                val intent = Intent(this@MainActivity, MainActivity::class.java)
-                return android.app.PendingIntent.getActivity(this@MainActivity, 0, intent, android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
-            }
-
-            override fun getCurrentContentText(player: com.google.android.exoplayer2.Player): CharSequence? {
-                return player.currentMediaItem?.mediaMetadata?.artist
-            }
-
-            override fun getCurrentLargeIcon(player: com.google.android.exoplayer2.Player, callback: PlayerNotificationManager.BitmapCallback): android.graphics.Bitmap? {
-                return null
+        // Request notification permission on Android 13+ and set up PlayerNotificationManager when granted
+        val requestPermissionLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                setupNotificationManager()
             }
         }
 
-        playerNotificationManager = PlayerNotificationManager.Builder(this, NOTIFICATION_ID, CHANNEL_ID)
-            .setChannelNameResourceId(R.string.notification_channel_name)
-            .setMediaDescriptionAdapter(mediaDescriptionAdapter)
-            .build()
-
-        playerNotificationManager?.setPlayer(player)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+                setupNotificationManager()
+            } else {
+                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        } else {
+            setupNotificationManager()
+        }
 
         openDocumentTreeLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) {
@@ -165,6 +160,47 @@ class MainActivity : AppCompatActivity() {
         playerNotificationManager = null
         player?.release()
         player = null
+    }
+
+    private fun setupNotificationManager() {
+        val mediaDescriptionAdapter = object : PlayerNotificationManager.MediaDescriptionAdapter {
+            override fun getCurrentContentTitle(player: com.google.android.exoplayer2.Player): CharSequence {
+                return player.currentMediaItem?.mediaMetadata?.title ?: "MusicApp"
+            }
+
+            override fun createCurrentContentIntent(player: com.google.android.exoplayer2.Player): android.app.PendingIntent? {
+                val intent = Intent(this@MainActivity, MainActivity::class.java)
+                return android.app.PendingIntent.getActivity(this@MainActivity, 0, intent, android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+            }
+
+            override fun getCurrentContentText(player: com.google.android.exoplayer2.Player): CharSequence? {
+                return player.currentMediaItem?.mediaMetadata?.artist
+            }
+
+            override fun getCurrentLargeIcon(player: com.google.android.exoplayer2.Player, callback: PlayerNotificationManager.BitmapCallback): android.graphics.Bitmap? {
+                return null
+            }
+        }
+
+        // Ensure notification channel exists on O+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NotificationManager::class.java)
+            nm?.createNotificationChannel(
+                NotificationChannel(
+                    CHANNEL_ID,
+                    getString(R.string.notification_channel_name),
+                    NotificationManager.IMPORTANCE_LOW
+                )
+            )
+        }
+
+        playerNotificationManager = PlayerNotificationManager.Builder(this, NOTIFICATION_ID, CHANNEL_ID)
+            .setChannelNameResourceId(R.string.notification_channel_name)
+            .setMediaDescriptionAdapter(mediaDescriptionAdapter)
+            .setSmallIconResourceId(R.mipmap.ic_launcher)
+            .build()
+
+        playerNotificationManager?.setPlayer(player)
     }
 
     override fun onBackPressed() {
