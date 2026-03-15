@@ -26,6 +26,7 @@ import android.app.NotificationManager
 import android.os.Build
 import com.google.android.material.navigation.NavigationView
 import androidx.documentfile.provider.DocumentFile
+import android.media.MediaMetadataRetriever
 import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
@@ -72,7 +73,7 @@ class MainActivity : AppCompatActivity() {
         recyclerView = findViewById<RecyclerView>(R.id.recycler_view)
         recyclerView.layoutManager = LinearLayoutManager(this)
         adapter = MusicAdapter(musicList) { musicFile ->
-            play(musicFile.uri)
+            play(musicFile)
         }
         recyclerView.adapter = adapter
 
@@ -173,7 +174,33 @@ class MainActivity : AppCompatActivity() {
             val lower = name.lowercase()
             val isAudio = type.startsWith("audio/") || lower.endsWith(".mp3") || lower.endsWith(".m4a") || lower.endsWith(".wav") || lower.endsWith(".flac") || lower.endsWith(".ogg") || lower.endsWith(".aac")
             if (isAudio) {
-                out.add(MusicFile(name, doc.uri))
+                // try to extract artist metadata; fallback to filename without extension
+                var displayName = name
+                try {
+                    val uri = doc.uri
+                    val retriever = MediaMetadataRetriever()
+                    try {
+                        val pfd = contentResolver.openFileDescriptor(uri, "r")
+                        pfd?.use {
+                            retriever.setDataSource(it.fileDescriptor)
+                            val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                            if (!artist.isNullOrBlank()) {
+                                displayName = artist
+                            } else {
+                                // strip extension
+                                val dot = name.lastIndexOf('.')
+                                if (dot > 0) displayName = name.substring(0, dot)
+                            }
+                        }
+                    } finally {
+                        retriever.release()
+                    }
+                } catch (e: Exception) {
+                    val dot = name.lastIndexOf('.')
+                    if (dot > 0) displayName = name.substring(0, dot)
+                }
+
+                out.add(MusicFile(displayName, doc.uri))
             }
         }
     }
@@ -230,12 +257,12 @@ class MainActivity : AppCompatActivity() {
         item.setIcon(android.R.drawable.ic_menu_slideshow)
     }
 
-    private fun play(uri: Uri) {
+    private fun play(musicFile: MusicFile) {
         playerView.visibility = View.VISIBLE
         playerView.showController()
         val mediaItem = MediaItem.Builder()
-            .setUri(uri)
-            .setMediaMetadata(MediaMetadata.Builder().setTitle(uri.lastPathSegment ?: "Unknown").build())
+            .setUri(musicFile.uri)
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(musicFile.name).build())
             .build()
         player?.setMediaItem(mediaItem)
         player?.prepare()
