@@ -181,8 +181,9 @@ class MainActivity : AppCompatActivity() {
             val lower = name.lowercase()
             val isAudio = type.startsWith("audio/") || lower.endsWith(".mp3") || lower.endsWith(".m4a") || lower.endsWith(".wav") || lower.endsWith(".flac") || lower.endsWith(".ogg") || lower.endsWith(".aac")
             if (isAudio) {
-                // try to extract artist metadata; fallback to filename without extension
-                var displayName = name
+                // extract title and artist metadata; fallback title to filename without extension
+                var title = name
+                var artist: String? = null
                 try {
                     val uri = doc.uri
                     val retriever = MediaMetadataRetriever()
@@ -190,13 +191,16 @@ class MainActivity : AppCompatActivity() {
                         val pfd = contentResolver.openFileDescriptor(uri, "r")
                         pfd?.use {
                             retriever.setDataSource(it.fileDescriptor)
-                            val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
-                            if (!artist.isNullOrBlank()) {
-                                displayName = artist
+                            val titleMeta = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                            val artistMeta = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                            if (!titleMeta.isNullOrBlank()) {
+                                title = titleMeta
                             } else {
-                                // strip extension
                                 val dot = name.lastIndexOf('.')
-                                if (dot > 0) displayName = name.substring(0, dot)
+                                if (dot > 0) title = name.substring(0, dot)
+                            }
+                            if (!artistMeta.isNullOrBlank()) {
+                                artist = artistMeta
                             }
                         }
                     } finally {
@@ -204,10 +208,10 @@ class MainActivity : AppCompatActivity() {
                     }
                 } catch (e: Exception) {
                     val dot = name.lastIndexOf('.')
-                    if (dot > 0) displayName = name.substring(0, dot)
+                    if (dot > 0) title = name.substring(0, dot)
                 }
 
-                out.add(MusicFile(displayName, doc.uri))
+                out.add(MusicFile(title, artist, doc.uri))
             }
         }
     }
@@ -267,9 +271,11 @@ class MainActivity : AppCompatActivity() {
     private fun play(musicFile: MusicFile) {
         playerView.visibility = View.VISIBLE
         playerView.showController()
+        val metaBuilder = MediaMetadata.Builder().setTitle(musicFile.title)
+        if (!musicFile.artist.isNullOrBlank()) metaBuilder.setArtist(musicFile.artist)
         val mediaItem = MediaItem.Builder()
             .setUri(musicFile.uri)
-            .setMediaMetadata(MediaMetadata.Builder().setTitle(musicFile.name).build())
+            .setMediaMetadata(metaBuilder.build())
             .build()
         player?.setMediaItem(mediaItem)
         player?.prepare()

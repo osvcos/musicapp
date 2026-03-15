@@ -9,11 +9,12 @@ class MusicDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
 
     companion object {
         private const val DATABASE_NAME = "musicapp.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
 
         private const val TABLE_TRACKS = "tracks"
         private const val COL_ID = "id"
         private const val COL_NAME = "name"
+        private const val COL_ARTIST = "artist"
         private const val COL_URI = "uri"
         private const val COL_DIR_URI = "dir_uri"
     }
@@ -23,6 +24,7 @@ class MusicDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
             CREATE TABLE $TABLE_TRACKS (
                 $COL_ID INTEGER PRIMARY KEY AUTOINCREMENT,
                 $COL_NAME TEXT,
+                $COL_ARTIST TEXT,
                 $COL_URI TEXT UNIQUE,
                 $COL_DIR_URI TEXT
             );
@@ -39,14 +41,15 @@ class MusicDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         val db = writableDatabase
         db.beginTransaction()
         try {
-            val stmt = db.compileStatement("INSERT OR IGNORE INTO $TABLE_TRACKS ($COL_NAME,$COL_URI,$COL_DIR_URI) VALUES (?,?,?)")
-            for (t in tracks) {
-                stmt.bindString(1, t.name)
-                stmt.bindString(2, t.uri.toString())
-                stmt.bindString(3, dirUri)
-                stmt.executeInsert()
-                stmt.clearBindings()
-            }
+            val stmt = db.compileStatement("INSERT OR IGNORE INTO $TABLE_TRACKS ($COL_NAME,$COL_ARTIST,$COL_URI,$COL_DIR_URI) VALUES (?,?,?,?)")
+                for (t in tracks) {
+                    stmt.bindString(1, t.title)
+                    stmt.bindString(2, t.artist ?: "")
+                    stmt.bindString(3, t.uri.toString())
+                    stmt.bindString(4, dirUri)
+                    stmt.executeInsert()
+                    stmt.clearBindings()
+                }
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()
@@ -57,7 +60,7 @@ class MusicDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         val db = readableDatabase
         val cursor = db.query(
             TABLE_TRACKS,
-            arrayOf(COL_NAME, COL_URI),
+            arrayOf(COL_NAME, COL_ARTIST, COL_URI),
             "$COL_DIR_URI = ?",
             arrayOf(dirUri),
             null,
@@ -68,8 +71,9 @@ class MusicDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         cursor.use {
             while (it.moveToNext()) {
                 val name = it.getString(0) ?: "Unknown"
-                val uriStr = it.getString(1) ?: continue
-                results.add(MusicFile(name, android.net.Uri.parse(uriStr)))
+                val artist = it.getString(1)
+                val uriStr = it.getString(2) ?: continue
+                results.add(MusicFile(name, if (artist.isNullOrBlank()) null else artist, android.net.Uri.parse(uriStr)))
             }
         }
         return results

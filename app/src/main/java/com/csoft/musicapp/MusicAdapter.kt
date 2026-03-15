@@ -7,7 +7,7 @@ import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 
-data class MusicFile(val name: String, val uri: Uri)
+data class MusicFile(val title: String, val artist: String?, val uri: Uri)
 
 class MusicAdapter(
     private val items: MutableList<MusicFile>,
@@ -16,6 +16,7 @@ class MusicAdapter(
 
     class VH(view: View) : RecyclerView.ViewHolder(view) {
         val title: TextView = view.findViewById(R.id.text_title)
+        val artist: TextView = view.findViewById(R.id.text_artist)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): VH {
@@ -25,7 +26,8 @@ class MusicAdapter(
 
     override fun onBindViewHolder(holder: VH, position: Int) {
         val item = items[position]
-        holder.title.text = item.name
+        holder.title.text = item.title
+        holder.artist.text = item.artist ?: ""
         holder.itemView.setOnClickListener { onItemClick(item) }
     }
 
