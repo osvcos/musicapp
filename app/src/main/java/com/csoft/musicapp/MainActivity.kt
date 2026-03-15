@@ -16,7 +16,9 @@ import androidx.recyclerview.widget.RecyclerView
 import android.view.View
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
+import com.google.android.exoplayer2.MediaMetadata
 import com.google.android.exoplayer2.ui.PlayerView
+import com.google.android.exoplayer2.ui.PlayerNotificationManager
 import com.google.android.material.navigation.NavigationView
 import androidx.documentfile.provider.DocumentFile
 
@@ -29,6 +31,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var openDocumentTreeLauncher: ActivityResultLauncher<Uri?>
     private var player: ExoPlayer? = null
     private lateinit var playerView: PlayerView
+    private var playerNotificationManager: PlayerNotificationManager? = null
+    private val NOTIFICATION_ID = 1
+    private val CHANNEL_ID = "music_playback_channel"
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,6 +68,33 @@ class MainActivity : AppCompatActivity() {
         playerView.showController()
         player = ExoPlayer.Builder(this).build()
         playerView.player = player
+
+        // Create PlayerNotificationManager using Builder
+        val mediaDescriptionAdapter = object : PlayerNotificationManager.MediaDescriptionAdapter {
+            override fun getCurrentContentTitle(player: com.google.android.exoplayer2.Player): CharSequence {
+                return player.currentMediaItem?.mediaMetadata?.title ?: "MusicApp"
+            }
+
+            override fun createCurrentContentIntent(player: com.google.android.exoplayer2.Player): android.app.PendingIntent? {
+                val intent = Intent(this@MainActivity, MainActivity::class.java)
+                return android.app.PendingIntent.getActivity(this@MainActivity, 0, intent, android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+            }
+
+            override fun getCurrentContentText(player: com.google.android.exoplayer2.Player): CharSequence? {
+                return player.currentMediaItem?.mediaMetadata?.artist
+            }
+
+            override fun getCurrentLargeIcon(player: com.google.android.exoplayer2.Player, callback: PlayerNotificationManager.BitmapCallback): android.graphics.Bitmap? {
+                return null
+            }
+        }
+
+        playerNotificationManager = PlayerNotificationManager.Builder(this, NOTIFICATION_ID, CHANNEL_ID)
+            .setChannelNameResourceId(R.string.notification_channel_name)
+            .setMediaDescriptionAdapter(mediaDescriptionAdapter)
+            .build()
+
+        playerNotificationManager?.setPlayer(player)
 
         openDocumentTreeLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) {
@@ -113,7 +145,10 @@ class MainActivity : AppCompatActivity() {
     private fun play(uri: Uri) {
         playerView.visibility = View.VISIBLE
         playerView.showController()
-        val mediaItem = MediaItem.fromUri(uri)
+        val mediaItem = MediaItem.Builder()
+            .setUri(uri)
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(uri.lastPathSegment ?: "Unknown").build())
+            .build()
         player?.setMediaItem(mediaItem)
         player?.prepare()
         player?.play()
@@ -126,6 +161,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        playerNotificationManager?.setPlayer(null)
+        playerNotificationManager = null
         player?.release()
         player = null
     }

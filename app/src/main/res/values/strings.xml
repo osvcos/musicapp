@@ -3,4 +3,5 @@
     <string name="add_directory">Añadir directorio</string>
     <string name="navigation_drawer_open">Abrir menú lateral</string>
     <string name="navigation_drawer_close">Cerrar menú lateral</string>
+    <string name="notification_channel_name">Reproducción de música</string>
 </resources>

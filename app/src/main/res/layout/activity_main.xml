@@ -26,9 +26,9 @@
             <com.google.android.exoplayer2.ui.PlayerView
                 android:id="@+id/player_view"
                 android:layout_width="match_parent"
-                android:layout_height="80dp"
+                android:layout_height="60dp"
                 android:layout_gravity="bottom"
-                android:visibility="gone"
+                android:visibility="visible"
                 app:use_artwork="false"
                 app:use_controller="true" />
 
@@ -37,7 +37,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:padding="16dp"
-                android:layout_marginBottom="80dp" />
+                android:layout_marginBottom="60dp" />
 
         </FrameLayout>
 
