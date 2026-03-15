@@ -121,14 +121,21 @@ class MainActivity : AppCompatActivity() {
                     addDirectoryToSaved(displayName, uri.toString())
                     addDirectoryToDrawer(navView, displayName, uri)
 
-                    val results = mutableListOf<MusicFile>()
-                    scanDocumentFile(pickedDir, results)
-                    // persist tracks in DB in background
+                    // show loading overlay and run enrichment (scan + persist) off UI thread
+                    val loading = findViewById<android.view.View>(R.id.loading_overlay)
+                    runOnUiThread { loading.visibility = android.view.View.VISIBLE }
+
                     Thread {
+                        val results = mutableListOf<MusicFile>()
+                        scanDocumentFile(pickedDir, results)
+                        // persist tracks in DB
                         dbHelper.insertTracks(uri.toString(), results)
+                        runOnUiThread {
+                            adapter.update(results)
+                            loading.visibility = android.view.View.GONE
+                            Toast.makeText(this, "${'$'}{results.size} archivos enriquecidos y guardados", Toast.LENGTH_SHORT).show()
+                        }
                     }.start()
-                    adapter.update(results)
-                    Toast.makeText(this, "${'$'}{results.size} archivos encontrados", Toast.LENGTH_SHORT).show()
                 }
             }
         }
