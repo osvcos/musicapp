@@ -29,7 +29,8 @@
                 android:layout_height="80dp"
                 android:layout_gravity="bottom"
                 android:visibility="gone"
-                app:use_artwork="false" />
+                app:use_artwork="false"
+                app:use_controller="true" />
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/recycler_view"

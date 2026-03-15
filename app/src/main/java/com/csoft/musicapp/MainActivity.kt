@@ -59,6 +59,8 @@ class MainActivity : AppCompatActivity() {
         recyclerView.adapter = adapter
 
         playerView = findViewById(R.id.player_view)
+        playerView.setControllerShowTimeoutMs(0)
+        playerView.showController()
         player = ExoPlayer.Builder(this).build()
         playerView.player = player
 
@@ -110,6 +112,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun play(uri: Uri) {
         playerView.visibility = View.VISIBLE
+        playerView.showController()
         val mediaItem = MediaItem.fromUri(uri)
         player?.setMediaItem(mediaItem)
         player?.prepare()
