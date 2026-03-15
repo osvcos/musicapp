@@ -13,6 +13,10 @@ import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import android.view.View
+import com.google.android.exoplayer2.ExoPlayer
+import com.google.android.exoplayer2.MediaItem
+import com.google.android.exoplayer2.ui.PlayerView
 import com.google.android.material.navigation.NavigationView
 import androidx.documentfile.provider.DocumentFile
 
@@ -23,6 +27,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: MusicAdapter
     private val musicList = mutableListOf<MusicFile>()
     private lateinit var openDocumentTreeLauncher: ActivityResultLauncher<Uri?>
+    private var player: ExoPlayer? = null
+    private lateinit var playerView: PlayerView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,8 +53,14 @@ class MainActivity : AppCompatActivity() {
 
         recyclerView = findViewById<RecyclerView>(R.id.recycler_view)
         recyclerView.layoutManager = LinearLayoutManager(this)
-        adapter = MusicAdapter(musicList)
+        adapter = MusicAdapter(musicList) { musicFile ->
+            play(musicFile.uri)
+        }
         recyclerView.adapter = adapter
+
+        playerView = findViewById(R.id.player_view)
+        player = ExoPlayer.Builder(this).build()
+        playerView.player = player
 
         openDocumentTreeLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) {
@@ -94,6 +106,25 @@ class MainActivity : AppCompatActivity() {
                 out.add(MusicFile(name, doc.uri))
             }
         }
+    }
+
+    private fun play(uri: Uri) {
+        playerView.visibility = View.VISIBLE
+        val mediaItem = MediaItem.fromUri(uri)
+        player?.setMediaItem(mediaItem)
+        player?.prepare()
+        player?.play()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        player?.pause()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        player?.release()
+        player = null
     }
 
     override fun onBackPressed() {

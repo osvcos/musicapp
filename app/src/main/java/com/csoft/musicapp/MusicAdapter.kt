@@ -9,7 +9,10 @@ import androidx.recyclerview.widget.RecyclerView
 
 data class MusicFile(val name: String, val uri: Uri)
 
-class MusicAdapter(private val items: MutableList<MusicFile>) : RecyclerView.Adapter<MusicAdapter.VH>() {
+class MusicAdapter(
+    private val items: MutableList<MusicFile>,
+    private val onItemClick: (MusicFile) -> Unit
+) : RecyclerView.Adapter<MusicAdapter.VH>() {
 
     class VH(view: View) : RecyclerView.ViewHolder(view) {
         val title: TextView = view.findViewById(R.id.text_title)
@@ -23,6 +26,7 @@ class MusicAdapter(private val items: MutableList<MusicFile>) : RecyclerView.Ada
     override fun onBindViewHolder(holder: VH, position: Int) {
         val item = items[position]
         holder.title.text = item.name
+        holder.itemView.setOnClickListener { onItemClick(item) }
     }
 
     override fun getItemCount(): Int = items.size
