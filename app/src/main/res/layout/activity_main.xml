@@ -58,6 +58,7 @@
                     <ProgressBar
                         android:layout_width="48dp"
                         android:layout_height="48dp"
+                        android:layout_gravity="center"
                         style="?android:attr/progressBarStyleLarge" />
 
                     <TextView
@@ -66,7 +67,8 @@
                         android:layout_height="wrap_content"
                         android:layout_marginTop="12dp"
                         android:text="Enriqueciendo pistas..."
-                        android:textColor="@android:color/white" />
+                        android:textColor="@android:color/white"
+                        android:layout_gravity="center" />
 
                 </LinearLayout>
 
