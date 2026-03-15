@@ -26,6 +26,10 @@ import android.app.NotificationManager
 import android.os.Build
 import com.google.android.material.navigation.NavigationView
 import androidx.documentfile.provider.DocumentFile
+import android.content.SharedPreferences
+import org.json.JSONArray
+import org.json.JSONObject
+import android.view.Menu
 
 class MainActivity : AppCompatActivity() {
 
@@ -39,6 +43,9 @@ class MainActivity : AppCompatActivity() {
     private var playerNotificationManager: PlayerNotificationManager? = null
     private val NOTIFICATION_ID = 1
     private val CHANNEL_ID = "music_playback_channel"
+    private val PREFS_NAME = "musicapp_prefs"
+    private val KEY_SAVED_DIRS = "saved_dirs"
+    private val DIR_MENU_GROUP = 100
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -91,6 +98,9 @@ class MainActivity : AppCompatActivity() {
             setupNotificationManager()
         }
 
+        // Populate drawer with saved directories
+        loadSavedDirectories(navView)
+
         openDocumentTreeLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) {
                 try {
@@ -102,6 +112,11 @@ class MainActivity : AppCompatActivity() {
 
                 val pickedDir = DocumentFile.fromTreeUri(this, uri)
                 if (pickedDir != null && pickedDir.isDirectory) {
+                    // add to drawer and persist
+                    val displayName = pickedDir.name ?: uri.lastPathSegment ?: "Directorio"
+                    addDirectoryToSaved(displayName, uri.toString())
+                    addDirectoryToDrawer(navView, displayName, uri)
+
                     val results = mutableListOf<MusicFile>()
                     scanDocumentFile(pickedDir, results)
                     adapter.update(results)
@@ -114,6 +129,20 @@ class MainActivity : AppCompatActivity() {
             when (menuItem.itemId) {
                 R.id.action_add_directory -> {
                     openDocumentTreeLauncher.launch(null)
+                }
+                else -> {
+                    // handle dynamic directory items that carry their URI in the Intent data
+                    val intent = menuItem.intent
+                    val dataUri = intent?.data
+                    if (dataUri != null) {
+                        val pickedDir = DocumentFile.fromTreeUri(this, dataUri)
+                        if (pickedDir != null && pickedDir.isDirectory) {
+                            val results = mutableListOf<MusicFile>()
+                            scanDocumentFile(pickedDir, results)
+                            adapter.update(results)
+                            Toast.makeText(this, "${'$'}{results.size} archivos encontrados", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
             }
             drawerLayout.closeDrawer(GravityCompat.START)
@@ -135,6 +164,58 @@ class MainActivity : AppCompatActivity() {
                 out.add(MusicFile(name, doc.uri))
             }
         }
+    }
+
+    private fun getPrefs(): SharedPreferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+
+    private fun loadSavedDirectories(navView: NavigationView) {
+        val prefs = getPrefs()
+        val json = prefs.getString(KEY_SAVED_DIRS, null) ?: return
+        try {
+            val arr = JSONArray(json)
+            val menu = navView.menu
+            menu.removeGroup(DIR_MENU_GROUP)
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val name = obj.optString("name")
+                val uriStr = obj.optString("uri")
+                if (uriStr.isNullOrEmpty()) continue
+                val uri = Uri.parse(uriStr)
+                addDirectoryMenuItem(menu, name, uri)
+            }
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
+
+    private fun addDirectoryToSaved(name: String, uriStr: String) {
+        val prefs = getPrefs()
+        val json = prefs.getString(KEY_SAVED_DIRS, null)
+        val arr = if (json != null) JSONArray(json) else JSONArray()
+        // avoid duplicates
+        for (i in 0 until arr.length()) {
+            val obj = arr.optJSONObject(i)
+            if (obj != null && obj.optString("uri") == uriStr) return
+        }
+        val obj = JSONObject()
+        obj.put("name", name)
+        obj.put("uri", uriStr)
+        arr.put(obj)
+        prefs.edit().putString(KEY_SAVED_DIRS, arr.toString()).apply()
+    }
+
+    private fun addDirectoryToDrawer(navView: NavigationView, name: String, uri: Uri) {
+        val menu = navView.menu
+        addDirectoryMenuItem(menu, name, uri)
+    }
+
+    private fun addDirectoryMenuItem(menu: Menu, name: String, uri: Uri) {
+        // add under group so we can clear later if needed
+        val item = menu.add(DIR_MENU_GROUP, Menu.NONE, Menu.NONE, name)
+        val intent = Intent()
+        intent.data = uri
+        item.intent = intent
+        item.setIcon(android.R.drawable.ic_menu_slideshow)
     }
 
     private fun play(uri: Uri) {
