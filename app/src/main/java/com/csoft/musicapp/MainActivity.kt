@@ -43,6 +43,7 @@ class MainActivity : AppCompatActivity() {
     private var playerNotificationManager: PlayerNotificationManager? = null
     private val NOTIFICATION_ID = 1
     private val CHANNEL_ID = "music_playback_channel"
+    private lateinit var dbHelper: MusicDbHelper
     private val PREFS_NAME = "musicapp_prefs"
     private val KEY_SAVED_DIRS = "saved_dirs"
     private val DIR_MENU_GROUP = 100
@@ -74,6 +75,8 @@ class MainActivity : AppCompatActivity() {
             play(musicFile.uri)
         }
         recyclerView.adapter = adapter
+
+        dbHelper = MusicDbHelper(this)
 
         playerView = findViewById(R.id.player_view)
         playerView.setControllerShowTimeoutMs(0)
@@ -119,6 +122,10 @@ class MainActivity : AppCompatActivity() {
 
                     val results = mutableListOf<MusicFile>()
                     scanDocumentFile(pickedDir, results)
+                    // persist tracks in DB in background
+                    Thread {
+                        dbHelper.insertTracks(uri.toString(), results)
+                    }.start()
                     adapter.update(results)
                     Toast.makeText(this, "${'$'}{results.size} archivos encontrados", Toast.LENGTH_SHORT).show()
                 }
@@ -131,17 +138,22 @@ class MainActivity : AppCompatActivity() {
                     openDocumentTreeLauncher.launch(null)
                 }
                 else -> {
-                    // handle dynamic directory items that carry their URI in the Intent data
+                    // Load tracks for this directory from DB (do not rescan)
                     val intent = menuItem.intent
                     val dataUri = intent?.data
                     if (dataUri != null) {
-                        val pickedDir = DocumentFile.fromTreeUri(this, dataUri)
-                        if (pickedDir != null && pickedDir.isDirectory) {
-                            val results = mutableListOf<MusicFile>()
-                            scanDocumentFile(pickedDir, results)
-                            adapter.update(results)
-                            Toast.makeText(this, "${'$'}{results.size} archivos encontrados", Toast.LENGTH_SHORT).show()
-                        }
+                        val dirUriStr = dataUri.toString()
+                        Thread {
+                            val saved = dbHelper.getTracksForDir(dirUriStr)
+                            runOnUiThread {
+                                if (saved.isNotEmpty()) {
+                                    adapter.update(saved)
+                                    Toast.makeText(this, "${'$'}{saved.size} pistas cargadas desde la base de datos", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(this, "No hay pistas guardadas para este directorio", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }.start()
                     }
                 }
             }
