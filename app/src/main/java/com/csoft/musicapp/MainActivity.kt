@@ -14,16 +14,11 @@ import androidx.drawerlayout.widget.DrawerLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import android.view.View
-import com.google.android.exoplayer2.ExoPlayer
-import com.google.android.exoplayer2.MediaItem
-import com.google.android.exoplayer2.MediaMetadata
 import android.widget.ImageButton
-import com.google.android.exoplayer2.ui.PlayerNotificationManager
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.os.Build
-import android.support.v4.media.session.MediaSessionCompat
-import android.support.v4.media.session.PlaybackStateCompat
+import android.content.ComponentName
+import android.content.ServiceConnection
+import android.os.IBinder
+import android.content.Context
 import com.google.android.material.navigation.NavigationView
 import androidx.documentfile.provider.DocumentFile
 import android.media.MediaMetadataRetriever
@@ -40,11 +35,64 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: MusicAdapter
     private val musicList = mutableListOf<MusicFile>()
     private lateinit var openDocumentTreeLauncher: ActivityResultLauncher<Uri?>
-    private var player: ExoPlayer? = null
-    private var playerNotificationManager: PlayerNotificationManager? = null
-    private var mediaSession: MediaSessionCompat? = null
-    private val NOTIFICATION_ID = 1
-    private val CHANNEL_ID = "music_playback_channel"
+    private var playerService: MusicPlayerService? = null
+    private var serviceBound: Boolean = false
+    private var serviceListener: MusicPlayerService.ServiceListener? = null
+    private lateinit var btnPrev: ImageButton
+    private lateinit var btnPlayPause: ImageButton
+    private lateinit var btnNext: ImageButton
+    private lateinit var btnShuffle: ImageButton
+    private val serviceConnection = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            val local = binder as? MusicPlayerService.LocalBinder
+            playerService = local?.getService()
+            serviceBound = true
+            // register UI listener
+            playerService?.let { svc ->
+                serviceListener = object : MusicPlayerService.ServiceListener {
+                    override fun onMediaItemTransition(uri: String?) {
+                        runOnUiThread {
+                            try {
+                                val parsed = if (uri != null) Uri.parse(uri) else null
+                                adapter.setPlayingUri(parsed)
+                            } catch (e: Exception) {
+                            }
+                        }
+                    }
+
+                    override fun onIsPlayingChanged(isPlaying: Boolean) {
+                        runOnUiThread {
+                            if (isPlaying) btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+                            else btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                        }
+                    }
+
+                    override fun onShuffleModeChanged(shuffleEnabled: Boolean) {
+                        runOnUiThread {
+                            btnShuffle.alpha = if (shuffleEnabled) 1f else 0.6f
+                        }
+                    }
+                }
+                serviceListener?.let { svc.registerListener(it) }
+
+                // sync initial UI state
+                runOnUiThread {
+                    try {
+                        if (svc.isPlaying()) btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+                        else btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                        btnShuffle.alpha = if (svc.isShuffleEnabled()) 1f else 0.6f
+                        val cur = svc.getCurrentMediaUri()
+                        if (cur != null) adapter.setPlayingUri(Uri.parse(cur))
+                    } catch (e: Exception) {}
+                }
+            }
+        }
+
+        override fun onServiceDisconnected(name: ComponentName?) {
+            playerService = null
+            serviceBound = false
+        }
+    }
     private lateinit var dbHelper: MusicDbHelper
     private val PREFS_NAME = "musicapp_prefs"
     private val KEY_SAVED_DIRS = "saved_dirs"
@@ -83,100 +131,46 @@ class MainActivity : AppCompatActivity() {
 
         dbHelper = MusicDbHelper(this)
 
-        player = ExoPlayer.Builder(this).build()
-
-        // Inicializa MediaSession y callbacks básicos para controlar ExoPlayer
-        mediaSession = MediaSessionCompat(this, "MusicAppSession").apply {
-            setCallback(object : MediaSessionCompat.Callback() {
-                override fun onPlay() {
-                    player?.play()
-                }
-
-                override fun onPause() {
-                    player?.pause()
-                }
-
-                override fun onSkipToNext() {
-                    player?.seekToNextMediaItem()
-                }
-
-                override fun onSkipToPrevious() {
-                    player?.seekToPreviousMediaItem()
-                }
-
-                override fun onSeekTo(pos: Long) {
-                    player?.seekTo(pos)
-                }
-            })
-            isActive = true
-        }
+        // Start and bind to MusicPlayerService
+        val svcIntent = Intent(this, MusicPlayerService::class.java)
+        startService(svcIntent)
+        bindService(svcIntent, serviceConnection, Context.BIND_AUTO_CREATE)
 
         // Custom floating controls
-        val btnPrev = findViewById<ImageButton>(R.id.btn_prev)
-        val btnPlayPause = findViewById<ImageButton>(R.id.btn_play_pause)
-        val btnNext = findViewById<ImageButton>(R.id.btn_next)
-        val btnShuffle = findViewById<ImageButton>(R.id.btn_shuffle)
+        btnPrev = findViewById<ImageButton>(R.id.btn_prev)
+        btnPlayPause = findViewById<ImageButton>(R.id.btn_play_pause)
+        btnNext = findViewById<ImageButton>(R.id.btn_next)
+        btnShuffle = findViewById<ImageButton>(R.id.btn_shuffle)
 
-        btnPrev.setOnClickListener { player?.seekToPreviousMediaItem() }
-        btnPlayPause.setOnClickListener {
-            if (player?.isPlaying == true) player?.pause() else player?.play()
+        btnPrev.setOnClickListener {
+            if (serviceBound) playerService?.let { Intent(this, MusicPlayerService::class.java).also { it.action = MusicPlayerService.ACTION_SKIP_PREV; startService(it) } }
+            else Intent(this, MusicPlayerService::class.java).also { it.action = MusicPlayerService.ACTION_SKIP_PREV; startService(it) }
         }
-        btnNext.setOnClickListener { player?.seekToNextMediaItem() }
+        btnPlayPause.setOnClickListener {
+            if (serviceBound) {
+                if (playerService?.isPlaying() == true) playerService?.pause() else playerService?.play()
+            } else {
+                Intent(this, MusicPlayerService::class.java).also { it.action = MusicPlayerService.ACTION_PLAY_PAUSE; startService(it) }
+            }
+        }
+        btnNext.setOnClickListener {
+            Intent(this, MusicPlayerService::class.java).also { it.action = MusicPlayerService.ACTION_SKIP_NEXT; startService(it) }
+        }
         btnShuffle.setOnClickListener {
-            val newMode = !(player?.shuffleModeEnabled ?: false)
-            player?.shuffleModeEnabled = newMode
-            btnShuffle.alpha = if (newMode) 1f else 0.6f
+            Intent(this, MusicPlayerService::class.java).also { it.action = MusicPlayerService.ACTION_TOGGLE_SHUFFLE; startService(it) }
+            btnShuffle.alpha = if (btnShuffle.alpha < 1f) 1f else 0.6f
         }
 
         // initial UI state
-        btnShuffle.alpha = if (player?.shuffleModeEnabled == true) 1f else 0.6f
+        btnShuffle.alpha = 0.6f
         btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
 
-        // update adapter highlight and UI when media item or playback state changes
-        player?.addListener(object : com.google.android.exoplayer2.Player.Listener {
-            override fun onMediaItemTransition(mediaItem: com.google.android.exoplayer2.MediaItem?, reason: Int) {
-                val uri = mediaItem?.localConfiguration?.uri
-                try {
-                    adapter.setPlayingUri(uri)
-                } catch (e: Exception) {
-                    // ignore if adapter not ready
-                }
-            }
 
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                runOnUiThread {
-                    if (isPlaying) btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
-                    else btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
-                }
-                // Actualiza estado de reproducción en MediaSession
-                try {
-                    val state = if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
-                    val pos = player?.currentPosition ?: 0L
-                    val pb = PlaybackStateCompat.Builder()
-                        .setState(state, pos, if (isPlaying) 1f else 0f)
-                        .setActions(
-                            PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_PAUSE or
-                                    PlaybackStateCompat.ACTION_PLAY_PAUSE or PlaybackStateCompat.ACTION_SEEK_TO or
-                                    PlaybackStateCompat.ACTION_SKIP_TO_NEXT or PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
-                        )
-                        .build()
-                    mediaSession?.setPlaybackState(pb)
-                } catch (e: Exception) {
-                    // ignore
-                }
-            }
-
-            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-                runOnUiThread {
-                    btnShuffle.alpha = if (shuffleModeEnabled) 1f else 0.6f
-                }
-            }
-        })
+        // NOTE: Playback updates (notification, media session) are handled in MusicPlayerService.
 
         emptyHint = findViewById(R.id.empty_hint_text)
 
-        // Inicializa el PlayerNotificationManager (el canal y permiso son gestionados por LoadingActivity)
-        setupNotificationManager()
+        // Notification & media session handled by MusicPlayerService
 
         // Populate drawer: prefer data prepared by LoadingActivity, fallback to prefs
         populateDrawerFromIntent(navView)
@@ -501,99 +495,49 @@ class MainActivity : AppCompatActivity() {
     private fun play(musicFile: MusicFile) {
         // Build a playback queue starting from the selected item and continuing to the end
         val startIndex = musicList.indexOfFirst { it.uri == musicFile.uri }
+        val uris = ArrayList<String>()
+        val titles = ArrayList<String>()
+        val artists = ArrayList<String>()
+
         if (startIndex < 0) {
-            // fallback: single item
-            val metaBuilder = MediaMetadata.Builder().setTitle(musicFile.title)
-            if (!musicFile.artist.isNullOrBlank()) metaBuilder.setArtist(musicFile.artist)
-            val mediaItem = MediaItem.Builder()
-                .setUri(musicFile.uri)
-                .setMediaMetadata(metaBuilder.build())
-                .build()
-            player?.setMediaItem(mediaItem)
+            uris.add(musicFile.uri.toString())
+            titles.add(musicFile.title)
+            artists.add(musicFile.artist ?: "")
         } else {
-            val mediaItems = musicList.subList(startIndex, musicList.size).map { mf ->
-                val mb = MediaMetadata.Builder().setTitle(mf.title)
-                if (!mf.artist.isNullOrBlank()) mb.setArtist(mf.artist)
-                MediaItem.Builder().setUri(mf.uri).setMediaMetadata(mb.build()).build()
+            for (mf in musicList.subList(startIndex, musicList.size)) {
+                uris.add(mf.uri.toString())
+                titles.add(mf.title)
+                artists.add(mf.artist ?: "")
             }
-            player?.setMediaItems(mediaItems)
         }
 
-        player?.prepare()
-        player?.play()
+        val intent = Intent(this, MusicPlayerService::class.java).apply {
+            action = MusicPlayerService.ACTION_PLAY_QUEUE
+            putStringArrayListExtra(MusicPlayerService.EXTRA_URIS, uris)
+            putStringArrayListExtra(MusicPlayerService.EXTRA_TITLES, titles)
+            putStringArrayListExtra(MusicPlayerService.EXTRA_ARTISTS, artists)
+        }
+        startService(intent)
 
-        // highlight current playing item in the list (listener will update on transitions)
+        // highlight current playing item in the list
         try {
             adapter.setPlayingUri(musicFile.uri)
         } catch (e: Exception) {
-            // ignore if adapter not ready
         }
     }
 
     override fun onPause() {
         super.onPause()
-        player?.pause()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        playerNotificationManager?.setPlayer(null)
-        playerNotificationManager = null
-        // release media session
-        try {
-            mediaSession?.isActive = false
-            mediaSession?.release()
-        } catch (e: Exception) {
-            // ignore
-        }
-        mediaSession = null
-
-        player?.release()
-        player = null
-    }
-
-    private fun setupNotificationManager() {
-        val mediaDescriptionAdapter = object : PlayerNotificationManager.MediaDescriptionAdapter {
-            override fun getCurrentContentTitle(player: com.google.android.exoplayer2.Player): CharSequence {
-                return player.currentMediaItem?.mediaMetadata?.title ?: "MusicApp"
-            }
-
-            override fun createCurrentContentIntent(player: com.google.android.exoplayer2.Player): android.app.PendingIntent? {
-                val intent = Intent(this@MainActivity, MainActivity::class.java)
-                return android.app.PendingIntent.getActivity(this@MainActivity, 0, intent, android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
-            }
-
-            override fun getCurrentContentText(player: com.google.android.exoplayer2.Player): CharSequence? {
-                return player.currentMediaItem?.mediaMetadata?.artist
-            }
-
-            override fun getCurrentLargeIcon(player: com.google.android.exoplayer2.Player, callback: PlayerNotificationManager.BitmapCallback): android.graphics.Bitmap? {
-                return null
-            }
-        }
-
-        // Ensure notification channel exists on O+
-        /* if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val nm = getSystemService(NotificationManager::class.java)
-            nm?.createNotificationChannel(
-                NotificationChannel(
-                    CHANNEL_ID,
-                    getString(R.string.notification_channel_name),
-                    NotificationManager.IMPORTANCE_LOW
-                )
-            )
-        } */
-
-        playerNotificationManager = PlayerNotificationManager.Builder(this, NOTIFICATION_ID, CHANNEL_ID)
-            .setChannelNameResourceId(R.string.notification_channel_name)
-            .setMediaDescriptionAdapter(mediaDescriptionAdapter)
-            .setSmallIconResourceId(R.mipmap.ic_launcher)
-            .build()
-
-        playerNotificationManager?.setPlayer(player)
-        // Attach non-null MediaSession token if available
-        mediaSession?.sessionToken?.let { token ->
-            playerNotificationManager?.setMediaSessionToken(token)
+        if (serviceBound) {
+            try {
+                serviceListener?.let { playerService?.unregisterListener(it) }
+            } catch (e: Exception) { }
+            try { unbindService(serviceConnection) } catch (e: Exception) { }
+            serviceBound = false
         }
     }
 
