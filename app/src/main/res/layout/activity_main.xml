@@ -23,14 +23,14 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent">
 
-            <com.google.android.exoplayer2.ui.PlayerView
+            <!-- <com.google.android.exoplayer2.ui.PlayerView
                 android:id="@+id/player_view"
                 android:layout_width="match_parent"
                 android:layout_height="60dp"
                 android:layout_gravity="bottom"
                 android:visibility="visible"
                 app:use_artwork="false"
-                app:use_controller="true" />
+                app:use_controller="false" /> -->
             <TextView
                 android:id="@+id/empty_hint_text"
                 android:layout_width="match_parent"
@@ -47,7 +47,13 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:padding="16dp"
-                android:layout_marginBottom="60dp" />
+                android:layout_marginBottom="0dp" />
+
+            <!-- Controles flotantes personalizados -->
+            <include
+                layout="@layout/player_floating_controls"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent" />
 
             <!-- Loading overlay shown while scanning/enriching -->
             <FrameLayout

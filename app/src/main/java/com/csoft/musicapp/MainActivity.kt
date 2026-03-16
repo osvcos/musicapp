@@ -20,6 +20,7 @@ import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.MediaMetadata
 import com.google.android.exoplayer2.ui.PlayerView
+import android.widget.ImageButton
 import com.google.android.exoplayer2.ui.PlayerNotificationManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -41,7 +42,7 @@ class MainActivity : AppCompatActivity() {
     private val musicList = mutableListOf<MusicFile>()
     private lateinit var openDocumentTreeLauncher: ActivityResultLauncher<Uri?>
     private var player: ExoPlayer? = null
-    private lateinit var playerView: PlayerView
+    // private lateinit var playerView: PlayerView
     private var playerNotificationManager: PlayerNotificationManager? = null
     private val NOTIFICATION_ID = 1
     private val CHANNEL_ID = "music_playback_channel"
@@ -83,13 +84,33 @@ class MainActivity : AppCompatActivity() {
 
         dbHelper = MusicDbHelper(this)
 
-        playerView = findViewById(R.id.player_view)
-        playerView.setControllerShowTimeoutMs(0)
-        playerView.showController()
+        // playerView = findViewById(R.id.player_view)
+        // playerView.useController = false
         player = ExoPlayer.Builder(this).build()
-        playerView.player = player
+        // playerView.player = player
 
-        // update adapter highlight when media item changes (keeps UI in sync with playlist)
+        // Custom floating controls
+        val btnPrev = findViewById<ImageButton>(R.id.btn_prev)
+        val btnPlayPause = findViewById<ImageButton>(R.id.btn_play_pause)
+        val btnNext = findViewById<ImageButton>(R.id.btn_next)
+        val btnShuffle = findViewById<ImageButton>(R.id.btn_shuffle)
+
+        btnPrev.setOnClickListener { player?.seekToPreviousMediaItem() }
+        btnPlayPause.setOnClickListener {
+            if (player?.isPlaying == true) player?.pause() else player?.play()
+        }
+        btnNext.setOnClickListener { player?.seekToNextMediaItem() }
+        btnShuffle.setOnClickListener {
+            val newMode = !(player?.shuffleModeEnabled ?: false)
+            player?.shuffleModeEnabled = newMode
+            btnShuffle.alpha = if (newMode) 1f else 0.6f
+        }
+
+        // initial UI state
+        btnShuffle.alpha = if (player?.shuffleModeEnabled == true) 1f else 0.6f
+        btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+
+        // update adapter highlight and UI when media item or playback state changes
         player?.addListener(object : com.google.android.exoplayer2.Player.Listener {
             override fun onMediaItemTransition(mediaItem: com.google.android.exoplayer2.MediaItem?, reason: Int) {
                 val uri = mediaItem?.localConfiguration?.uri
@@ -97,6 +118,19 @@ class MainActivity : AppCompatActivity() {
                     adapter.setPlayingUri(uri)
                 } catch (e: Exception) {
                     // ignore if adapter not ready
+                }
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                runOnUiThread {
+                    if (isPlaying) btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+                    else btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                }
+            }
+
+            override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                runOnUiThread {
+                    btnShuffle.alpha = if (shuffleModeEnabled) 1f else 0.6f
                 }
             }
         })
@@ -374,8 +408,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun play(musicFile: MusicFile) {
-        playerView.visibility = View.VISIBLE
-        playerView.showController()
+        // playerView.visibility = View.VISIBLE
+        // playerView.showController()
 
         // Build a playback queue starting from the selected item and continuing to the end
         val startIndex = musicList.indexOfFirst { it.uri == musicFile.uri }
