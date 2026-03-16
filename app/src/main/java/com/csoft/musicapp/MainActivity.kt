@@ -256,6 +256,8 @@ class MainActivity : AppCompatActivity() {
         // clear previous entries
         menu.removeGroup(DIR_MENU_GROUP)
         menu.removeItem(HINT_ITEM_ID)
+        // make our group checkable (single selection)
+        menu.setGroupCheckable(DIR_MENU_GROUP, true, true)
         if (json.isNullOrEmpty()) {
             // no saved dirs -> show hint in main activity
             emptyHint.visibility = View.VISIBLE
@@ -341,6 +343,8 @@ class MainActivity : AppCompatActivity() {
     private fun addDirectoryToDrawer(navView: NavigationView, name: String, uri: Uri) {
         val menu = navView.menu
         addDirectoryMenuItem(menu, name, uri)
+        // ensure group is checkable when adding dynamically
+        menu.setGroupCheckable(DIR_MENU_GROUP, true, true)
     }
 
     private fun addDirectoryMenuItem(menu: Menu, name: String, uri: Uri) {
@@ -351,6 +355,8 @@ class MainActivity : AppCompatActivity() {
         intent.data = uri
         item.intent = intent
         item.setIcon(android.R.drawable.ic_menu_slideshow)
+        // allow the item to be checkable so navView.setCheckedItem works
+        item.isCheckable = true
     }
 
     private fun play(musicFile: MusicFile) {
