@@ -142,6 +142,8 @@ class MainActivity : AppCompatActivity() {
                     Thread {
                         val results = mutableListOf<MusicFile>()
                         scanDocumentFile(pickedDir, results)
+                        // sort tracks alphabetically by title (case-insensitive) before persisting and showing
+                        results.sortWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
                         // persist tracks in DB
                         dbHelper.insertTracks(uri.toString(), results)
                         runOnUiThread {
