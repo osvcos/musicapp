@@ -51,6 +51,7 @@ class MainActivity : AppCompatActivity() {
     private val KEY_LAST_SELECTED = "last_selected_dir"
     private val DIR_MENU_GROUP = 100
     private val HINT_ITEM_ID = 9999
+    private lateinit var emptyHint: View
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,6 +89,8 @@ class MainActivity : AppCompatActivity() {
         player = ExoPlayer.Builder(this).build()
         playerView.player = player
 
+        emptyHint = findViewById(R.id.empty_hint_text)
+
         // Request notification permission on Android 13+ and set up PlayerNotificationManager when granted
         val requestPermissionLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
@@ -123,7 +126,8 @@ class MainActivity : AppCompatActivity() {
                     val displayName = pickedDir.name ?: uri.lastPathSegment ?: "Directorio"
                     addDirectoryToSaved(displayName, uri.toString())
                     addDirectoryToDrawer(navView, displayName, uri)
-                    // save as last selected and mark in drawer
+                    // hide empty hint and save as last selected
+                    emptyHint.visibility = View.GONE
                     getPrefs().edit().putString(KEY_LAST_SELECTED, uri.toString()).apply()
                     try {
                         navView.setCheckedItem(uri.hashCode())
@@ -167,6 +171,8 @@ class MainActivity : AppCompatActivity() {
                                 if (saved.isNotEmpty()) {
                                     adapter.update(saved)
                                     Toast.makeText(this, "${'$'}{saved.size} pistas cargadas desde la base de datos", Toast.LENGTH_SHORT).show()
+                                                    // hide empty hint when we have tracks
+                                                    emptyHint.visibility = View.GONE
                                     // persist last selected dir and mark item checked
                                     getPrefs().edit().putString(KEY_LAST_SELECTED, dirUriStr).apply()
                                     menuItem.isChecked = true
@@ -248,13 +254,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadSavedDirectories(navView: NavigationView) {
         val prefs = getPrefs()
-        val json = prefs.getString(KEY_SAVED_DIRS, null) ?: return
+        val json = prefs.getString(KEY_SAVED_DIRS, null)
+        val menu = navView.menu
+        // clear previous entries
+        menu.removeGroup(DIR_MENU_GROUP)
+        menu.removeItem(HINT_ITEM_ID)
+        if (json.isNullOrEmpty()) {
+            // no saved dirs -> show hint in main activity
+            emptyHint.visibility = View.VISIBLE
+            return
+        }
         try {
             val arr = JSONArray(json)
-            val menu = navView.menu
-            // clear previous entries including hint
-            menu.removeGroup(DIR_MENU_GROUP)
-            menu.removeItem(HINT_ITEM_ID)
             for (i in 0 until arr.length()) {
                 val obj = arr.getJSONObject(i)
                 val name = obj.optString("name")
@@ -263,15 +274,17 @@ class MainActivity : AppCompatActivity() {
                 val uri = Uri.parse(uriStr)
                 addDirectoryMenuItem(menu, name, uri)
             }
-            // if no saved directories, show hint text
+
+            // count entries in our group
             var groupCount = 0
             for (i in 0 until menu.size()) {
                 if (menu.getItem(i).groupId == DIR_MENU_GROUP) groupCount++
             }
             if (groupCount == 0) {
-                val hint = "Desliza el drawer hacia la derecha para agregar una carpeta de música"
-                menu.add(Menu.NONE, HINT_ITEM_ID, Menu.NONE, hint).isEnabled = false
+                emptyHint.visibility = View.VISIBLE
                 return
+            } else {
+                emptyHint.visibility = View.GONE
             }
 
             // If there are saved directories, select last selected (or last in list)
