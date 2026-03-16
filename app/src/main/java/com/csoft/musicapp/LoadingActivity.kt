@@ -32,7 +32,7 @@ class LoadingActivity : AppCompatActivity() {
             proceedAfterPermission()
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        /* if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
                 proceedAfterPermission()
             } else {
@@ -40,11 +40,12 @@ class LoadingActivity : AppCompatActivity() {
             }
         } else {
             proceedAfterPermission()
-        }
+        } */
+        proceedAfterPermission()
     }
 
     private fun proceedAfterPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        /* if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java)
             nm?.createNotificationChannel(
                 NotificationChannel(
@@ -53,7 +54,7 @@ class LoadingActivity : AppCompatActivity() {
                     NotificationManager.IMPORTANCE_LOW
                 )
             )
-        }
+        } */
 
         Thread {
             try {

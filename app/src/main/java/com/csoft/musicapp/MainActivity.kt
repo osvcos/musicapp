@@ -22,6 +22,8 @@ import com.google.android.exoplayer2.ui.PlayerNotificationManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
+import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
 import com.google.android.material.navigation.NavigationView
 import androidx.documentfile.provider.DocumentFile
 import android.media.MediaMetadataRetriever
@@ -40,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var openDocumentTreeLauncher: ActivityResultLauncher<Uri?>
     private var player: ExoPlayer? = null
     private var playerNotificationManager: PlayerNotificationManager? = null
+    private var mediaSession: MediaSessionCompat? = null
     private val NOTIFICATION_ID = 1
     private val CHANNEL_ID = "music_playback_channel"
     private lateinit var dbHelper: MusicDbHelper
@@ -82,6 +85,32 @@ class MainActivity : AppCompatActivity() {
 
         player = ExoPlayer.Builder(this).build()
 
+        // Inicializa MediaSession y callbacks básicos para controlar ExoPlayer
+        mediaSession = MediaSessionCompat(this, "MusicAppSession").apply {
+            setCallback(object : MediaSessionCompat.Callback() {
+                override fun onPlay() {
+                    player?.play()
+                }
+
+                override fun onPause() {
+                    player?.pause()
+                }
+
+                override fun onSkipToNext() {
+                    player?.seekToNextMediaItem()
+                }
+
+                override fun onSkipToPrevious() {
+                    player?.seekToPreviousMediaItem()
+                }
+
+                override fun onSeekTo(pos: Long) {
+                    player?.seekTo(pos)
+                }
+            })
+            isActive = true
+        }
+
         // Custom floating controls
         val btnPrev = findViewById<ImageButton>(R.id.btn_prev)
         val btnPlayPause = findViewById<ImageButton>(R.id.btn_play_pause)
@@ -118,6 +147,22 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     if (isPlaying) btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
                     else btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                }
+                // Actualiza estado de reproducción en MediaSession
+                try {
+                    val state = if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
+                    val pos = player?.currentPosition ?: 0L
+                    val pb = PlaybackStateCompat.Builder()
+                        .setState(state, pos, if (isPlaying) 1f else 0f)
+                        .setActions(
+                            PlaybackStateCompat.ACTION_PLAY or PlaybackStateCompat.ACTION_PAUSE or
+                                    PlaybackStateCompat.ACTION_PLAY_PAUSE or PlaybackStateCompat.ACTION_SEEK_TO or
+                                    PlaybackStateCompat.ACTION_SKIP_TO_NEXT or PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS
+                        )
+                        .build()
+                    mediaSession?.setPlaybackState(pb)
+                } catch (e: Exception) {
+                    // ignore
                 }
             }
 
@@ -494,6 +539,15 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         playerNotificationManager?.setPlayer(null)
         playerNotificationManager = null
+        // release media session
+        try {
+            mediaSession?.isActive = false
+            mediaSession?.release()
+        } catch (e: Exception) {
+            // ignore
+        }
+        mediaSession = null
+
         player?.release()
         player = null
     }
@@ -519,7 +573,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Ensure notification channel exists on O+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        /* if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java)
             nm?.createNotificationChannel(
                 NotificationChannel(
@@ -528,7 +582,7 @@ class MainActivity : AppCompatActivity() {
                     NotificationManager.IMPORTANCE_LOW
                 )
             )
-        }
+        } */
 
         playerNotificationManager = PlayerNotificationManager.Builder(this, NOTIFICATION_ID, CHANNEL_ID)
             .setChannelNameResourceId(R.string.notification_channel_name)
@@ -537,6 +591,10 @@ class MainActivity : AppCompatActivity() {
             .build()
 
         playerNotificationManager?.setPlayer(player)
+        // Attach non-null MediaSession token if available
+        mediaSession?.sessionToken?.let { token ->
+            playerNotificationManager?.setMediaSessionToken(token)
+        }
     }
 
     override fun onBackPressed() {
