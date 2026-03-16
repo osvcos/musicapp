@@ -365,6 +365,12 @@ class MainActivity : AppCompatActivity() {
         player?.setMediaItem(mediaItem)
         player?.prepare()
         player?.play()
+        // highlight current playing item in the list
+        try {
+            adapter.setPlayingUri(musicFile.uri)
+        } catch (e: Exception) {
+            // ignore if adapter not ready
+        }
     }
 
     override fun onPause() {
