@@ -14,8 +14,6 @@ import androidx.drawerlayout.widget.DrawerLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import android.view.View
-import android.Manifest
-import android.content.pm.PackageManager
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.MediaMetadata
@@ -132,25 +130,11 @@ class MainActivity : AppCompatActivity() {
 
         emptyHint = findViewById(R.id.empty_hint_text)
 
-        // Request notification permission on Android 13+ and set up PlayerNotificationManager when granted
-        val requestPermissionLauncher = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) {
-                setupNotificationManager()
-            }
-        }
+        // Inicializa el PlayerNotificationManager (el canal y permiso son gestionados por LoadingActivity)
+        setupNotificationManager()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-                setupNotificationManager()
-            } else {
-                requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        } else {
-            setupNotificationManager()
-        }
-
-        // Populate drawer with saved directories
-        loadSavedDirectories(navView)
+        // Populate drawer: prefer data prepared by LoadingActivity, fallback to prefs
+        populateDrawerFromIntent(navView)
 
         openDocumentTreeLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) {
@@ -364,6 +348,73 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             // ignore
+        }
+    }
+
+    private fun populateDrawerFromIntent(navView: NavigationView) {
+        val intent = intent
+        val names = intent.getStringArrayListExtra("drawer_names")
+        val uris = intent.getStringArrayListExtra("drawer_uris")
+        val lastSelected = intent.getStringExtra("last_selected")
+
+        val menu = navView.menu
+        // clear previous entries
+        menu.removeGroup(DIR_MENU_GROUP)
+        menu.removeItem(HINT_ITEM_ID)
+        menu.setGroupCheckable(DIR_MENU_GROUP, true, true)
+
+        if (names != null && uris != null && names.size == uris.size && names.isNotEmpty()) {
+            for (i in 0 until names.size) {
+                try {
+                    val name = names[i]
+                    val uri = Uri.parse(uris[i])
+                    addDirectoryMenuItem(menu, name, uri)
+                } catch (e: Exception) {
+                    // ignore individual failures
+                }
+            }
+
+            // mark last selected if present
+            if (!lastSelected.isNullOrEmpty()) {
+                for (i in 0 until menu.size()) {
+                    val it = menu.getItem(i)
+                    val dataUri = it.intent?.data
+                    if (dataUri != null && dataUri.toString() == lastSelected) {
+                        it.isChecked = true
+                        navView.setCheckedItem(it.itemId)
+                        loadTracksForDir(lastSelected)
+                        break
+                    }
+                }
+            } else {
+                // if nothing selected, preserve MainActivity behavior to show hint or last item
+                // count entries in our group
+                var groupCount = 0
+                for (i in 0 until menu.size()) {
+                    if (menu.getItem(i).groupId == DIR_MENU_GROUP) groupCount++
+                }
+                if (groupCount == 0) {
+                    emptyHint.visibility = View.VISIBLE
+                } else {
+                    emptyHint.visibility = View.GONE
+                    // load last item by default
+                    for (i in menu.size() - 1 downTo 0) {
+                        val it = menu.getItem(i)
+                        if (it.groupId == DIR_MENU_GROUP) {
+                            val dirUri = it.intent?.data?.toString()
+                            if (!dirUri.isNullOrEmpty()) {
+                                loadTracksForDir(dirUri)
+                                it.isChecked = true
+                                navView.setCheckedItem(it.itemId)
+                            }
+                            break
+                        }
+                    }
+                }
+            }
+        } else {
+            // fallback to prefs-based loading
+            loadSavedDirectories(navView)
         }
     }
 
