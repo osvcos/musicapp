@@ -23,14 +23,6 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent">
 
-            <!-- <com.google.android.exoplayer2.ui.PlayerView
-                android:id="@+id/player_view"
-                android:layout_width="match_parent"
-                android:layout_height="60dp"
-                android:layout_gravity="bottom"
-                android:visibility="visible"
-                app:use_artwork="false"
-                app:use_controller="false" /> -->
             <TextView
                 android:id="@+id/empty_hint_text"
                 android:layout_width="match_parent"

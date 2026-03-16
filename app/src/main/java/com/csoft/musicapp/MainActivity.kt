@@ -19,7 +19,6 @@ import android.content.pm.PackageManager
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.MediaMetadata
-import com.google.android.exoplayer2.ui.PlayerView
 import android.widget.ImageButton
 import com.google.android.exoplayer2.ui.PlayerNotificationManager
 import android.app.NotificationChannel
@@ -42,7 +41,6 @@ class MainActivity : AppCompatActivity() {
     private val musicList = mutableListOf<MusicFile>()
     private lateinit var openDocumentTreeLauncher: ActivityResultLauncher<Uri?>
     private var player: ExoPlayer? = null
-    // private lateinit var playerView: PlayerView
     private var playerNotificationManager: PlayerNotificationManager? = null
     private val NOTIFICATION_ID = 1
     private val CHANNEL_ID = "music_playback_channel"
@@ -84,10 +82,7 @@ class MainActivity : AppCompatActivity() {
 
         dbHelper = MusicDbHelper(this)
 
-        // playerView = findViewById(R.id.player_view)
-        // playerView.useController = false
         player = ExoPlayer.Builder(this).build()
-        // playerView.player = player
 
         // Custom floating controls
         val btnPrev = findViewById<ImageButton>(R.id.btn_prev)
@@ -408,9 +403,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun play(musicFile: MusicFile) {
-        // playerView.visibility = View.VISIBLE
-        // playerView.showController()
-
         // Build a playback queue starting from the selected item and continuing to the end
         val startIndex = musicList.indexOfFirst { it.uri == musicFile.uri }
         if (startIndex < 0) {
