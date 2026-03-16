@@ -89,6 +89,18 @@ class MainActivity : AppCompatActivity() {
         player = ExoPlayer.Builder(this).build()
         playerView.player = player
 
+        // update adapter highlight when media item changes (keeps UI in sync with playlist)
+        player?.addListener(object : com.google.android.exoplayer2.Player.Listener {
+            override fun onMediaItemTransition(mediaItem: com.google.android.exoplayer2.MediaItem?, reason: Int) {
+                val uri = mediaItem?.localConfiguration?.uri
+                try {
+                    adapter.setPlayingUri(uri)
+                } catch (e: Exception) {
+                    // ignore if adapter not ready
+                }
+            }
+        })
+
         emptyHint = findViewById(R.id.empty_hint_text)
 
         // Request notification permission on Android 13+ and set up PlayerNotificationManager when granted
@@ -364,16 +376,31 @@ class MainActivity : AppCompatActivity() {
     private fun play(musicFile: MusicFile) {
         playerView.visibility = View.VISIBLE
         playerView.showController()
-        val metaBuilder = MediaMetadata.Builder().setTitle(musicFile.title)
-        if (!musicFile.artist.isNullOrBlank()) metaBuilder.setArtist(musicFile.artist)
-        val mediaItem = MediaItem.Builder()
-            .setUri(musicFile.uri)
-            .setMediaMetadata(metaBuilder.build())
-            .build()
-        player?.setMediaItem(mediaItem)
+
+        // Build a playback queue starting from the selected item and continuing to the end
+        val startIndex = musicList.indexOfFirst { it.uri == musicFile.uri }
+        if (startIndex < 0) {
+            // fallback: single item
+            val metaBuilder = MediaMetadata.Builder().setTitle(musicFile.title)
+            if (!musicFile.artist.isNullOrBlank()) metaBuilder.setArtist(musicFile.artist)
+            val mediaItem = MediaItem.Builder()
+                .setUri(musicFile.uri)
+                .setMediaMetadata(metaBuilder.build())
+                .build()
+            player?.setMediaItem(mediaItem)
+        } else {
+            val mediaItems = musicList.subList(startIndex, musicList.size).map { mf ->
+                val mb = MediaMetadata.Builder().setTitle(mf.title)
+                if (!mf.artist.isNullOrBlank()) mb.setArtist(mf.artist)
+                MediaItem.Builder().setUri(mf.uri).setMediaMetadata(mb.build()).build()
+            }
+            player?.setMediaItems(mediaItems)
+        }
+
         player?.prepare()
         player?.play()
-        // highlight current playing item in the list
+
+        // highlight current playing item in the list (listener will update on transitions)
         try {
             adapter.setPlayingUri(musicFile.uri)
         } catch (e: Exception) {
