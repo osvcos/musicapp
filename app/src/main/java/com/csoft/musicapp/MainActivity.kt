@@ -31,6 +31,7 @@ import android.content.SharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
 import android.view.Menu
+import android.view.MenuItem
 
 class MainActivity : AppCompatActivity() {
 
@@ -47,7 +48,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var dbHelper: MusicDbHelper
     private val PREFS_NAME = "musicapp_prefs"
     private val KEY_SAVED_DIRS = "saved_dirs"
+    private val KEY_LAST_SELECTED = "last_selected_dir"
     private val DIR_MENU_GROUP = 100
+    private val HINT_ITEM_ID = 9999
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -120,6 +123,13 @@ class MainActivity : AppCompatActivity() {
                     val displayName = pickedDir.name ?: uri.lastPathSegment ?: "Directorio"
                     addDirectoryToSaved(displayName, uri.toString())
                     addDirectoryToDrawer(navView, displayName, uri)
+                    // save as last selected and mark in drawer
+                    getPrefs().edit().putString(KEY_LAST_SELECTED, uri.toString()).apply()
+                    try {
+                        navView.setCheckedItem(uri.hashCode())
+                    } catch (e: Exception) {
+                        // ignore
+                    }
 
                     // show loading overlay and run enrichment (scan + persist) off UI thread
                     val loading = findViewById<android.view.View>(R.id.loading_overlay)
@@ -157,6 +167,10 @@ class MainActivity : AppCompatActivity() {
                                 if (saved.isNotEmpty()) {
                                     adapter.update(saved)
                                     Toast.makeText(this, "${'$'}{saved.size} pistas cargadas desde la base de datos", Toast.LENGTH_SHORT).show()
+                                    // persist last selected dir and mark item checked
+                                    getPrefs().edit().putString(KEY_LAST_SELECTED, dirUriStr).apply()
+                                    menuItem.isChecked = true
+                                    navView.setCheckedItem(menuItem.itemId)
                                 } else {
                                     Toast.makeText(this, "No hay pistas guardadas para este directorio", Toast.LENGTH_SHORT).show()
                                 }
@@ -168,6 +182,20 @@ class MainActivity : AppCompatActivity() {
             drawerLayout.closeDrawer(GravityCompat.START)
             true
         }
+    }
+
+    private fun loadTracksForDir(dirUriStr: String) {
+        Thread {
+            val saved = dbHelper.getTracksForDir(dirUriStr)
+            runOnUiThread {
+                if (saved.isNotEmpty()) {
+                    adapter.update(saved)
+                    Toast.makeText(this, "${'$'}{saved.size} pistas cargadas desde la base de datos", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "No hay pistas guardadas para este directorio", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }.start()
     }
 
     private fun scanDocumentFile(doc: DocumentFile, out: MutableList<MusicFile>) {
@@ -224,7 +252,9 @@ class MainActivity : AppCompatActivity() {
         try {
             val arr = JSONArray(json)
             val menu = navView.menu
+            // clear previous entries including hint
             menu.removeGroup(DIR_MENU_GROUP)
+            menu.removeItem(HINT_ITEM_ID)
             for (i in 0 until arr.length()) {
                 val obj = arr.getJSONObject(i)
                 val name = obj.optString("name")
@@ -232,6 +262,50 @@ class MainActivity : AppCompatActivity() {
                 if (uriStr.isNullOrEmpty()) continue
                 val uri = Uri.parse(uriStr)
                 addDirectoryMenuItem(menu, name, uri)
+            }
+            // if no saved directories, show hint text
+            var groupCount = 0
+            for (i in 0 until menu.size()) {
+                if (menu.getItem(i).groupId == DIR_MENU_GROUP) groupCount++
+            }
+            if (groupCount == 0) {
+                val hint = "Desliza el drawer hacia la derecha para agregar una carpeta de música"
+                menu.add(Menu.NONE, HINT_ITEM_ID, Menu.NONE, hint).isEnabled = false
+                return
+            }
+
+            // If there are saved directories, select last selected (or last in list)
+            val lastSelected = prefs.getString(KEY_LAST_SELECTED, null)
+            var selected: MenuItem? = null
+            if (!lastSelected.isNullOrEmpty()) {
+                for (i in 0 until menu.size()) {
+                    val it = menu.getItem(i)
+                    val intent = it.intent
+                    val dataUri = intent?.data
+                    if (dataUri != null && dataUri.toString() == lastSelected) {
+                        selected = it
+                        break
+                    }
+                }
+            }
+            if (selected == null) {
+                // pick last menu item in our group
+                for (i in menu.size() - 1 downTo 0) {
+                    val it = menu.getItem(i)
+                    if (it.groupId == DIR_MENU_GROUP) {
+                        selected = it
+                        break
+                    }
+                }
+            }
+            if (selected != null) {
+                val dirUri = selected.intent?.data?.toString()
+                if (!dirUri.isNullOrEmpty()) {
+                    // load tracks and mark checked
+                    loadTracksForDir(dirUri)
+                    selected.isChecked = true
+                    navView.setCheckedItem(selected.itemId)
+                }
             }
         } catch (e: Exception) {
             // ignore
@@ -261,7 +335,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun addDirectoryMenuItem(menu: Menu, name: String, uri: Uri) {
         // add under group so we can clear later if needed
-        val item = menu.add(DIR_MENU_GROUP, Menu.NONE, Menu.NONE, name)
+        val itemId = uri.hashCode()
+        val item = menu.add(DIR_MENU_GROUP, itemId, Menu.NONE, name)
         val intent = Intent()
         intent.data = uri
         item.intent = intent
