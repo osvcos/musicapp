@@ -147,7 +147,6 @@ class MainActivity : AppCompatActivity() {
                         runOnUiThread {
                             adapter.update(results)
                             loading.visibility = android.view.View.GONE
-                            Toast.makeText(this, "${'$'}{results.size} archivos enriquecidos y guardados", Toast.LENGTH_SHORT).show()
                         }
                     }.start()
                 }
@@ -170,7 +169,6 @@ class MainActivity : AppCompatActivity() {
                             runOnUiThread {
                                 if (saved.isNotEmpty()) {
                                     adapter.update(saved)
-                                    Toast.makeText(this, "${'$'}{saved.size} pistas cargadas desde la base de datos", Toast.LENGTH_SHORT).show()
                                                     // hide empty hint when we have tracks
                                                     emptyHint.visibility = View.GONE
                                     // persist last selected dir and mark item checked
@@ -196,7 +194,6 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 if (saved.isNotEmpty()) {
                     adapter.update(saved)
-                    Toast.makeText(this, "${'$'}{saved.size} pistas cargadas desde la base de datos", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(this, "No hay pistas guardadas para este directorio", Toast.LENGTH_SHORT).show()
                 }
