@@ -59,6 +59,7 @@ class LoadingActivity : AppCompatActivity() {
             proceedAfterPermission()
         } */
         // No llamar a proceedAfterPermission() aquí, se llamará tras mostrar el anuncio o si falla
+        proceedAfterPermission() // Delete when ads are enabled
     }
 
     private fun loadAppOpenAd() {
@@ -111,7 +112,7 @@ class LoadingActivity : AppCompatActivity() {
 
     private fun proceedAfterPermission() {
         // Si el anuncio ya se mostró o no está disponible, continuar
-        if (isAdShowing.get()) return
+        // if (isAdShowing.get()) return
         /* if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java)
             nm?.createNotificationChannel(
