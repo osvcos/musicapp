@@ -15,7 +15,21 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.documentfile.provider.DocumentFile
 import org.json.JSONArray
 
+import com.google.android.gms.ads.MobileAds
+import com.google.android.gms.ads.appopen.AppOpenAd
+import com.google.android.gms.ads.AdRequest
+import com.google.android.gms.ads.appopen.AppOpenAd.AppOpenAdLoadCallback
+import com.google.android.gms.ads.FullScreenContentCallback
+import com.google.android.gms.ads.LoadAdError
+import android.util.Log
+import java.util.concurrent.atomic.AtomicBoolean
+
 class LoadingActivity : AppCompatActivity() {
+
+    private var appOpenAd: AppOpenAd? = null
+    private var isAdShowing = AtomicBoolean(false)
+    private var isAdLoaded = false
+    private val adUnitId = "ca-app-pub-3940256099942544/9257395921" // Test ID, reemplaza por el tuyo en producción
 
     private val PREFS_NAME = "musicapp_prefs"
     private val KEY_SAVED_DIRS = "saved_dirs"
@@ -28,6 +42,9 @@ class LoadingActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_loading)
 
+        // Inicializar Google Mobile Ads SDK
+        /* MobileAds.initialize(this) { }
+        loadAppOpenAd() */
         requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
             proceedAfterPermission()
         }
@@ -41,10 +58,60 @@ class LoadingActivity : AppCompatActivity() {
         } else {
             proceedAfterPermission()
         } */
-        proceedAfterPermission()
+        // No llamar a proceedAfterPermission() aquí, se llamará tras mostrar el anuncio o si falla
+    }
+
+    private fun loadAppOpenAd() {
+        val request = AdRequest.Builder().build()
+        // La API actual de AppOpenAd.load solo acepta 4 argumentos: context, adUnitId, adRequest, callback
+        AppOpenAd.load(
+            this,
+            adUnitId,
+            request,
+            object : AppOpenAdLoadCallback() {
+                override fun onAdLoaded(ad: AppOpenAd) {
+                    appOpenAd = ad
+                    isAdLoaded = true
+                    showAppOpenAdIfAvailable()
+                }
+                override fun onAdFailedToLoad(loadAdError: LoadAdError) {
+                    Log.d("LoadingActivity", "AppOpenAd failed to load: ${loadAdError.message}")
+                    isAdLoaded = false
+                    proceedAfterPermission()
+                }
+            }
+        )
+    }
+
+    private fun showAppOpenAdIfAvailable() {
+        if (isAdLoaded && !isAdShowing.get() && appOpenAd != null) {
+            isAdShowing.set(true)
+            appOpenAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
+                override fun onAdDismissedFullScreenContent() {
+                    isAdShowing.set(false)
+                    appOpenAd = null
+                    // Continúa con el flujo normal después de cerrar el anuncio
+                    proceedAfterPermission()
+                }
+                override fun onAdFailedToShowFullScreenContent(adError: com.google.android.gms.ads.AdError) {
+                    isAdShowing.set(false)
+                    appOpenAd = null
+                    proceedAfterPermission()
+                }
+                override fun onAdShowedFullScreenContent() {
+                    // No hacer nada
+                }
+            }
+            appOpenAd?.show(this)
+        } else {
+            // Si no hay anuncio, continuar normalmente
+            proceedAfterPermission()
+        }
     }
 
     private fun proceedAfterPermission() {
+        // Si el anuncio ya se mostró o no está disponible, continuar
+        if (isAdShowing.get()) return
         /* if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java)
             nm?.createNotificationChannel(
