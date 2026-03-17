@@ -15,6 +15,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MusicApp">
 
+        <meta-data
+        android:name="com.google.android.gms.ads.APPLICATION_ID"
+        android:value="ca-app-pub-4319401541466459~8842115377"/>
         <activity
             android:name=".LoadingActivity"
             android:exported="true"
