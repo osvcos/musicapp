@@ -78,11 +78,17 @@ class MainActivity : AppCompatActivity() {
                 // sync initial UI state
                 runOnUiThread {
                     try {
-                        if (svc.isPlaying()) btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
-                        else btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
-                        btnShuffle.alpha = if (svc.isShuffleEnabled()) 1f else 0.6f
-                        val cur = svc.getCurrentMediaUri()
-                        if (cur != null) adapter.setPlayingUri(Uri.parse(cur))
+                        val svc = playerService
+                        if (svc != null) {
+                            if (svc.isPlaying()) btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
+                            else btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                            btnShuffle.alpha = if (svc.isShuffleEnabled()) 1f else 0.6f
+                            val cur = svc.getCurrentMediaUri()
+                            if (cur is String && cur.isNotEmpty()) adapter.setPlayingUri(Uri.parse(cur))
+                        } else {
+                            btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                            btnShuffle.alpha = 0.6f
+                        }
                     } catch (e: Exception) {}
                 }
             }
@@ -147,8 +153,8 @@ class MainActivity : AppCompatActivity() {
             else Intent(this, MusicPlayerService::class.java).also { it.action = MusicPlayerService.ACTION_SKIP_PREV; startService(it) }
         }
         btnPlayPause.setOnClickListener {
-            if (serviceBound) {
-                if (playerService?.isPlaying() == true) playerService?.pause() else playerService?.play()
+            if (serviceBound && playerService != null) {
+                if (playerService!!.isPlaying()) playerService!!.pause() else playerService!!.play()
             } else {
                 Intent(this, MusicPlayerService::class.java).also { it.action = MusicPlayerService.ACTION_PLAY_PAUSE; startService(it) }
             }
@@ -493,29 +499,41 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun play(musicFile: MusicFile) {
-        // Build a playback queue starting from the selected item and continuing to the end
-        val startIndex = musicList.indexOfFirst { it.uri == musicFile.uri }
+        // Si el modo aleatorio está desactivado, la cola es toda la lista
         val uris = ArrayList<String>()
         val titles = ArrayList<String>()
         val artists = ArrayList<String>()
-
-        if (startIndex < 0) {
-            uris.add(musicFile.uri.toString())
-            titles.add(musicFile.title)
-            artists.add(musicFile.artist ?: "")
-        } else {
-            for (mf in musicList.subList(startIndex, musicList.size)) {
+        val isShuffle = playerService?.isShuffleEnabled() == true
+        var startIndex = musicList.indexOfFirst { it.uri == musicFile.uri }
+        if (!isShuffle) {
+            for (mf in musicList) {
                 uris.add(mf.uri.toString())
                 titles.add(mf.title)
                 artists.add(mf.artist ?: "")
             }
+        } else {
+            // Si está en modo aleatorio, mantener el comportamiento anterior
+            if (startIndex < 0) {
+                uris.add(musicFile.uri.toString())
+                titles.add(musicFile.title)
+                artists.add(musicFile.artist ?: "")
+                startIndex = 0
+            } else {
+                for (mf in musicList.subList(startIndex, musicList.size)) {
+                    uris.add(mf.uri.toString())
+                    titles.add(mf.title)
+                    artists.add(mf.artist ?: "")
+                }
+            }
         }
 
+        // Enviar el índice inicial al servicio
         val intent = Intent(this, MusicPlayerService::class.java).apply {
             action = MusicPlayerService.ACTION_PLAY_QUEUE
             putStringArrayListExtra(MusicPlayerService.EXTRA_URIS, uris)
             putStringArrayListExtra(MusicPlayerService.EXTRA_TITLES, titles)
             putStringArrayListExtra(MusicPlayerService.EXTRA_ARTISTS, artists)
+            putExtra(MusicPlayerService.EXTRA_START_INDEX, if (!isShuffle) startIndex else 0)
         }
         startService(intent)
 

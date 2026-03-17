@@ -46,6 +46,7 @@ class MusicPlayerService : Service() {
         const val EXTRA_URIS = "extra_uris"
         const val EXTRA_TITLES = "extra_titles"
         const val EXTRA_ARTISTS = "extra_artists"
+        const val EXTRA_START_INDEX = "extra_start_index"
         const val NOTIFICATION_ID = 1
         const val CHANNEL_ID = "music_playback_channel"
     }
@@ -130,7 +131,8 @@ class MusicPlayerService : Service() {
                     val uris = intent.getStringArrayListExtra(EXTRA_URIS) ?: arrayListOf()
                     val titles = intent.getStringArrayListExtra(EXTRA_TITLES) ?: arrayListOf()
                     val artists = intent.getStringArrayListExtra(EXTRA_ARTISTS) ?: arrayListOf()
-                    playQueue(uris, titles, artists)
+                    val startIndex = intent.getIntExtra(EXTRA_START_INDEX, 0)
+                    playQueue(uris, titles, artists, startIndex)
                     // Ensure service is foreground while playing
                     startForeground(NOTIFICATION_ID, buildEmptyNotification())
                 }
@@ -150,15 +152,16 @@ class MusicPlayerService : Service() {
         return binder
     }
 
-    private fun playQueue(uris: List<String>, titles: List<String>, artists: List<String>) {
+    private fun playQueue(uris: List<String>, titles: List<String>, artists: List<String>, startIndex: Int) {
         val mediaItems = uris.mapIndexed { idx, u ->
             val mb = MediaMetadata.Builder().setTitle(titles.getOrNull(idx) ?: "MusicApp")
             val art = artists.getOrNull(idx)
             if (!art.isNullOrBlank()) mb.setArtist(art)
             MediaItem.Builder().setUri(u).setMediaMetadata(mb.build()).build()
         }
-        player.setMediaItems(mediaItems)
+        player.setMediaItems(mediaItems, /* resetPosition= */true)
         player.prepare()
+        player.seekTo(startIndex, 0)
         player.play()
     }
 
