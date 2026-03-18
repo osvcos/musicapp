@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">MusicApp</string>
+    <string name="add_directory">Add directory</string>
+</resources>
