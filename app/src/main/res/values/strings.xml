@@ -4,4 +4,6 @@
     <string name="navigation_drawer_open">Abrir menú lateral</string>
     <string name="navigation_drawer_close">Cerrar menú lateral</string>
     <string name="notification_channel_name">Reproducción de música</string>
+    <string name="activity_loading_message">Cargando...</string>
+    <string name="activity_main_empty_hint">Desliza el drawer hacia la derecha para agregar una carpeta de música</string>
 </resources>

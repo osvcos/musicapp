@@ -28,7 +28,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:gravity="center"
-                android:text="Desliza el drawer hacia la derecha para agregar una carpeta de música"
+                android:text="@string/activity_main_empty_hint"
                 android:textAppearance="@style/TextAppearance.AppCompat.Medium"
                 android:textColor="@android:color/black"
                 android:visibility="gone"
