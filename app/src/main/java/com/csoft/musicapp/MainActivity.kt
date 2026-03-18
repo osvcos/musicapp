@@ -512,18 +512,49 @@ class MainActivity : AppCompatActivity() {
                 artists.add(mf.artist ?: "")
             }
         } else {
-            // Si está en modo aleatorio, mantener el comportamiento anterior
-            if (startIndex < 0) {
+            // Modo aleatorio: crear una permutación aleatoria de la lista
+            // pero asegurando que el ítem seleccionado sea el primer elemento.
+            if (musicList.isEmpty()) {
                 uris.add(musicFile.uri.toString())
                 titles.add(musicFile.title)
                 artists.add(musicFile.artist ?: "")
                 startIndex = 0
             } else {
-                for (mf in musicList.subList(startIndex, musicList.size)) {
-                    uris.add(mf.uri.toString())
-                    titles.add(mf.title)
-                    artists.add(mf.artist ?: "")
+                // construir lista de índices restantes y mezclar
+                val remaining = musicList.indices.toMutableList()
+                if (startIndex >= 0) remaining.remove(startIndex)
+                remaining.shuffle()
+
+                // lista ordenada que tendrá primero el seleccionado
+                val orderedUris = ArrayList<String>()
+                val orderedTitles = ArrayList<String>()
+                val orderedArtists = ArrayList<String>()
+
+                if (startIndex >= 0) {
+                    val sel = musicList[startIndex]
+                    orderedUris.add(sel.uri.toString())
+                    orderedTitles.add(sel.title)
+                    orderedArtists.add(sel.artist ?: "")
+                } else {
+                    // si el item seleccionado no está en la lista, lo añadimos primero
+                    orderedUris.add(musicFile.uri.toString())
+                    orderedTitles.add(musicFile.title)
+                    orderedArtists.add(musicFile.artist ?: "")
                 }
+
+                for (i in remaining) {
+                    val mf = musicList[i]
+                    // evitar duplicados si la uri coincide con el seleccionado añadido manualmente
+                    if (mf.uri == musicFile.uri) continue
+                    orderedUris.add(mf.uri.toString())
+                    orderedTitles.add(mf.title)
+                    orderedArtists.add(mf.artist ?: "")
+                }
+
+                uris.addAll(orderedUris)
+                titles.addAll(orderedTitles)
+                artists.addAll(orderedArtists)
+                startIndex = 0
             }
         }
 
