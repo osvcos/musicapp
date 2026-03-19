@@ -1,5 +1,6 @@
 package com.csoft.musicapp
 
+import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -35,6 +36,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adapter: MusicAdapter
     private val musicList = mutableListOf<MusicFile>()
     private lateinit var openDocumentTreeLauncher: ActivityResultLauncher<Uri?>
+    private lateinit var requestPermissionLauncher: ActivityResultLauncher<String>
+    private lateinit var navView: com.google.android.material.navigation.NavigationView
     private var playerService: MusicPlayerService? = null
     private var serviceBound: Boolean = false
     private var serviceListener: MusicPlayerService.ServiceListener? = null
@@ -116,7 +119,7 @@ class MainActivity : AppCompatActivity() {
         supportActionBar?.title = "MusicApp"
 
         drawerLayout = findViewById<DrawerLayout>(R.id.drawer_layout)
-        val navView: NavigationView = findViewById<NavigationView>(R.id.nav_view)
+        navView = findViewById<com.google.android.material.navigation.NavigationView>(R.id.nav_view)
 
         val toggle = ActionBarDrawerToggle(
             this,
@@ -178,8 +181,12 @@ class MainActivity : AppCompatActivity() {
 
         // Notification & media session handled by MusicPlayerService
 
-        // Populate drawer: prefer data prepared by LoadingActivity, fallback to prefs
-        populateDrawerFromIntent(navView)
+        // Migrate LoadingActivity behavior: request permission and preload saved dirs
+        requestPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
+            proceedAfterPermission()
+        }
+
+        proceedAfterPermission()
 
         openDocumentTreeLauncher = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             if (uri != null) {
@@ -461,6 +468,125 @@ class MainActivity : AppCompatActivity() {
             // fallback to prefs-based loading
             loadSavedDirectories(navView)
         }
+    }
+
+    private fun proceedAfterPermission() {
+        val loading = findViewById<android.view.View>(R.id.loading_overlay)
+        runOnUiThread { loading.visibility = android.view.View.VISIBLE }
+
+        Thread {
+            try {
+                val prefs = getPrefs()
+                val json = prefs.getString(KEY_SAVED_DIRS, null)
+
+                val names = ArrayList<String>()
+                val uris = ArrayList<String>()
+
+                if (!json.isNullOrEmpty()) {
+                    try {
+                        val arr = org.json.JSONArray(json)
+                        for (i in 0 until arr.length()) {
+                            val obj = arr.optJSONObject(i)
+                            val name = obj?.optString("name") ?: "Directorio"
+                            val uriStr = obj?.optString("uri")
+                            if (!uriStr.isNullOrEmpty()) {
+                                try {
+                                    val uri = Uri.parse(uriStr)
+                                    val df = DocumentFile.fromTreeUri(this, uri)
+                                    if (df != null && df.isDirectory) {
+                                        names.add(name)
+                                        uris.add(uriStr)
+                                    }
+                                } catch (e: Exception) {
+                                    // ignore invalid entries
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // malformed JSON -> ignore
+                    }
+                }
+
+                val last = prefs.getString(KEY_LAST_SELECTED, null)
+                if (!last.isNullOrEmpty()) {
+                    try {
+                        val db = MusicDbHelper(this)
+                        db.getTracksForDir(last)
+                    } catch (e: Exception) {
+                        // ignore DB preload errors
+                    }
+                }
+
+                runOnUiThread {
+                    val menu = navView.menu
+                    // clear previous entries
+                    menu.removeGroup(DIR_MENU_GROUP)
+                    menu.removeItem(HINT_ITEM_ID)
+                    menu.setGroupCheckable(DIR_MENU_GROUP, true, true)
+
+                    if (names.isNotEmpty() && uris.isNotEmpty() && names.size == uris.size) {
+                        for (i in 0 until names.size) {
+                            try {
+                                val name = names[i]
+                                val uri = Uri.parse(uris[i])
+                                addDirectoryMenuItem(menu, name, uri)
+                            } catch (e: Exception) {
+                                // ignore individual failures
+                            }
+                        }
+
+                        if (!last.isNullOrEmpty()) {
+                            for (i in 0 until menu.size()) {
+                                val it = menu.getItem(i)
+                                val dataUri = it.intent?.data
+                                if (dataUri != null && dataUri.toString() == last) {
+                                    it.isChecked = true
+                                    navView.setCheckedItem(it.itemId)
+                                    loadTracksForDir(last)
+                                    break
+                                }
+                            }
+                        } else {
+                            // fallback to default behavior
+                            var groupCount = 0
+                            for (i in 0 until menu.size()) {
+                                if (menu.getItem(i).groupId == DIR_MENU_GROUP) groupCount++
+                            }
+                            if (groupCount == 0) {
+                                emptyHint.visibility = View.VISIBLE
+                            } else {
+                                emptyHint.visibility = View.GONE
+                                for (i in menu.size() - 1 downTo 0) {
+                                    val it = menu.getItem(i)
+                                    if (it.groupId == DIR_MENU_GROUP) {
+                                        val dirUri = it.intent?.data?.toString()
+                                        if (!dirUri.isNullOrEmpty()) {
+                                            loadTracksForDir(dirUri)
+                                            it.isChecked = true
+                                            navView.setCheckedItem(it.itemId)
+                                        }
+                                        break
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // fallback to prefs-based loading
+                        loadSavedDirectories(navView)
+                    }
+
+                    // hide loading overlay after UI updated
+                    try {
+                        loading.visibility = android.view.View.GONE
+                    } catch (e: Exception) { }
+                }
+            } finally {
+                // ensure overlay hidden in case of unexpected errors
+                try {
+                    runOnUiThread { loading.visibility = android.view.View.GONE }
+                } catch (e: Exception) { }
+            }
+        }.start()
     }
 
     private fun addDirectoryToSaved(name: String, uriStr: String) {
