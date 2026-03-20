@@ -5,8 +5,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioManager
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
@@ -61,6 +64,20 @@ class MusicPlayerService : Service() {
     private var mediaSession: MediaSessionCompat? = null
     private var playerNotificationManager: PlayerNotificationManager? = null
 
+    private val noisyReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                try {
+                    if (::player.isInitialized && player.isPlaying) {
+                        player.pause()
+                    }
+                } catch (e: Exception) {
+                    // ignore
+                }
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         val loadControl = DefaultLoadControl.Builder()
@@ -102,6 +119,12 @@ class MusicPlayerService : Service() {
 
         createNotificationChannel()
         setupNotificationManager()
+        // Register receiver to handle output changes (e.g., bluetooth disconnect)
+        try {
+            registerReceiver(noisyReceiver, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
+        } catch (e: Exception) {
+            // ignore
+        }
 
         player.addListener(object : com.google.android.exoplayer2.Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -259,6 +282,11 @@ class MusicPlayerService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            unregisterReceiver(noisyReceiver)
+        } catch (e: Exception) {
+            // ignore
+        }
         playerNotificationManager?.setPlayer(null)
         playerNotificationManager = null
         try {
