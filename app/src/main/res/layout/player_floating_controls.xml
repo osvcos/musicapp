@@ -29,7 +29,7 @@
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:scaleType="center"
-            android:src="@android:drawable/ic_media_play"
+            android:src="@drawable/play_circle_24px"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Play/Pause"
             android:layout_marginEnd="8dp" />

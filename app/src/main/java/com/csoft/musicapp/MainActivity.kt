@@ -65,8 +65,8 @@ class MainActivity : AppCompatActivity() {
 
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         runOnUiThread {
-                            if (isPlaying) btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
-                            else btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                            if (isPlaying) btnPlayPause.setImageResource(R.drawable.pause_circle_24px)
+                            else btnPlayPause.setImageResource(R.drawable.play_circle_24px)
                         }
                     }
 
@@ -89,8 +89,8 @@ class MainActivity : AppCompatActivity() {
                     try {
                         val svc = playerService
                         if (svc != null) {
-                            if (svc.isPlaying()) btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
-                            else btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                            if (svc.isPlaying()) btnPlayPause.setImageResource(R.drawable.pause_circle_24px)
+                            else btnPlayPause.setImageResource(R.drawable.play_circle_24px)
                             if (svc.isShuffleEnabled()) {
                                 btnShuffle.setImageResource(R.drawable.shuffle_on_24px)
                                 btnShuffle.alpha = 1f
@@ -101,7 +101,7 @@ class MainActivity : AppCompatActivity() {
                             val cur = svc.getCurrentMediaUri()
                             if (cur is String && cur.isNotEmpty()) adapter.setPlayingUri(Uri.parse(cur))
                         } else {
-                            btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                            btnPlayPause.setImageResource(R.drawable.play_circle_24px)
                             btnShuffle.setImageResource(R.drawable.shuffle_24px)
                             btnShuffle.alpha = 0.6f
                         }
