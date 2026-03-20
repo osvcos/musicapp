@@ -72,7 +72,13 @@ class MainActivity : AppCompatActivity() {
 
                     override fun onShuffleModeChanged(shuffleEnabled: Boolean) {
                         runOnUiThread {
-                            btnShuffle.alpha = if (shuffleEnabled) 1f else 0.6f
+                            if (shuffleEnabled) {
+                                btnShuffle.setImageResource(R.drawable.shuffle_on_24px)
+                                btnShuffle.alpha = 1f
+                            } else {
+                                btnShuffle.setImageResource(R.drawable.shuffle_24px)
+                                btnShuffle.alpha = 0.6f
+                            }
                         }
                     }
                 }
@@ -85,11 +91,18 @@ class MainActivity : AppCompatActivity() {
                         if (svc != null) {
                             if (svc.isPlaying()) btnPlayPause.setImageResource(android.R.drawable.ic_media_pause)
                             else btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
-                            btnShuffle.alpha = if (svc.isShuffleEnabled()) 1f else 0.6f
+                            if (svc.isShuffleEnabled()) {
+                                btnShuffle.setImageResource(R.drawable.shuffle_on_24px)
+                                btnShuffle.alpha = 1f
+                            } else {
+                                btnShuffle.setImageResource(R.drawable.shuffle_24px)
+                                btnShuffle.alpha = 0.6f
+                            }
                             val cur = svc.getCurrentMediaUri()
                             if (cur is String && cur.isNotEmpty()) adapter.setPlayingUri(Uri.parse(cur))
                         } else {
                             btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+                            btnShuffle.setImageResource(R.drawable.shuffle_24px)
                             btnShuffle.alpha = 0.6f
                         }
                     } catch (e: Exception) {}
