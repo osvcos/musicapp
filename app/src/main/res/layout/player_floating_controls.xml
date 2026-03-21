@@ -19,7 +19,7 @@
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:scaleType="center"
-            android:src="@android:drawable/ic_media_previous"
+            android:src="@drawable/skip_previous_24px"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Anterior"
             android:layout_marginEnd="8dp" />
@@ -39,7 +39,7 @@
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:scaleType="center"
-            android:src="@android:drawable/ic_media_next"
+            android:src="@drawable/skip_next_24px"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Siguiente"
             android:layout_marginEnd="8dp" />

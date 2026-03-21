@@ -185,7 +185,7 @@ class MainActivity : AppCompatActivity() {
 
         // initial UI state
         btnShuffle.alpha = 0.6f
-        btnPlayPause.setImageResource(android.R.drawable.ic_media_play)
+        btnPlayPause.setImageResource(R.drawable.play_circle_24px)
 
 
         // NOTE: Playback updates (notification, media session) are handled in MusicPlayerService.
