@@ -11,14 +11,14 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textSize="16sp"
-        android:textColor="@android:color/black" />
+        android:textColor="@color/silver" />
 
     <TextView
         android:id="@+id/text_artist"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textSize="14sp"
-        android:textColor="#88000000"
+        android:textColor="@color/graphite"
         android:layout_marginTop="2dp" />
 
 </LinearLayout>
