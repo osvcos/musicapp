@@ -13,7 +13,7 @@
         android:layout_alignParentEnd="true"
         android:layout_centerVertical="true"
         android:background="?attr/selectableItemBackgroundBorderless"
-        android:src="@android:drawable/ic_menu_delete"
+        android:src="@drawable/delete_24px"
         android:contentDescription="Eliminar"
         android:padding="4dp" />
 
