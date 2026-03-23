@@ -18,4 +18,5 @@
     <color name="iron_grey">#474747</color>
     <color name="graphite">#292929</color>
     <color name="grey_olive">#999999</color>
+    <color name="ic_launcher_background">#32323c</color>
 </resources>
