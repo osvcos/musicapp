@@ -78,4 +78,15 @@ class MusicDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         }
         return results
     }
+
+    fun deleteTracksForDir(dirUri: String) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete(TABLE_TRACKS, "$COL_DIR_URI = ?", arrayOf(dirUri))
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
 }

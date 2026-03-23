@@ -28,6 +28,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import android.view.Menu
 import android.view.MenuItem
+import android.view.ViewGroup
+import android.widget.TextView
 
 class MainActivity : AppCompatActivity() {
 
@@ -628,13 +630,95 @@ class MainActivity : AppCompatActivity() {
     private fun addDirectoryMenuItem(menu: Menu, name: String, uri: Uri) {
         // add under group so we can clear later if needed
         val itemId = uri.hashCode()
-        val item = menu.add(DIR_MENU_GROUP, itemId, Menu.NONE, name)
+        val item = menu.add(DIR_MENU_GROUP, itemId, Menu.NONE, "")
         val intent = Intent()
         intent.data = uri
         item.intent = intent
-        item.setIcon(android.R.drawable.ic_menu_slideshow)
+        // no icon on the MenuItem itself so our actionView can occupy full width
         // allow the item to be checkable so navView.setCheckedItem works
         item.isCheckable = true
+
+        try {
+            val actionView = layoutInflater.inflate(R.layout.nav_dir_item, null)
+            // ensure the inflated view fills available menu width
+            try { actionView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) } catch (e: Exception) { }
+            val tv = actionView.findViewById<TextView>(R.id.dir_name)
+            val btn = actionView.findViewById<ImageButton>(R.id.btn_delete)
+            tv.text = name
+
+            // ensure delete button does not steal focus from menu selection
+            try { btn.isFocusable = false; btn.isFocusableInTouchMode = false } catch (e: Exception) { }
+
+            btn.setOnClickListener {
+                val dirUriStr = uri.toString()
+                // remove from saved prefs
+                try {
+                    val prefs = getPrefs()
+                    val json = prefs.getString(KEY_SAVED_DIRS, null)
+                    if (!json.isNullOrEmpty()) {
+                        val arr = JSONArray(json)
+                        val newArr = JSONArray()
+                        for (i in 0 until arr.length()) {
+                            val obj = arr.optJSONObject(i)
+                            if (obj != null && obj.optString("uri") != dirUriStr) {
+                                newArr.put(obj)
+                            }
+                        }
+                        prefs.edit().putString(KEY_SAVED_DIRS, newArr.toString()).apply()
+                    }
+                } catch (e: Exception) {
+                    // ignore prefs removal errors
+                }
+
+                // delete tracks in DB off UI thread
+                Thread {
+                    try {
+                        dbHelper.deleteTracksForDir(dirUriStr)
+                    } catch (e: Exception) { }
+                }.start()
+
+                // remove menu item and select first available
+                try {
+                    menu.removeItem(itemId)
+                } catch (e: Exception) { }
+
+                // find first item in our group
+                var firstItem: MenuItem? = null
+                for (i in 0 until menu.size()) {
+                    val it = menu.getItem(i)
+                    if (it.groupId == DIR_MENU_GROUP) { firstItem = it; break }
+                }
+
+                if (firstItem != null) {
+                    val firstUri = firstItem.intent?.data?.toString()
+                    if (!firstUri.isNullOrEmpty()) {
+                        loadTracksForDir(firstUri)
+                        firstItem.isChecked = true
+                        navView.setCheckedItem(firstItem.itemId)
+                        getPrefs().edit().putString(KEY_LAST_SELECTED, firstUri).apply()
+                        emptyHint.visibility = View.GONE
+                    } else {
+                        adapter.update(mutableListOf())
+                        emptyHint.visibility = View.VISIBLE
+                        getPrefs().edit().remove(KEY_LAST_SELECTED).apply()
+                    }
+                } else {
+                    adapter.update(mutableListOf())
+                    emptyHint.visibility = View.VISIBLE
+                    getPrefs().edit().remove(KEY_LAST_SELECTED).apply()
+                }
+            }
+
+            actionView.setOnClickListener {
+                // forward click to the menu so selection behaves normally
+                try { menu.performIdentifierAction(item.itemId, 0) } catch (e: Exception) { }
+            }
+
+            item.actionView = actionView
+        } catch (e: Exception) {
+            // fallback: keep plain title if inflation fails
+            item.title = name
+        }
     }
 
     private fun play(musicFile: MusicFile) {
