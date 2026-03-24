@@ -21,6 +21,10 @@ import android.os.IBinder
 import android.content.Context
 import com.google.android.material.navigation.NavigationView
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.media.MediaMetadataRetriever
 import android.content.SharedPreferences
 import android.util.Log
@@ -47,6 +51,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnPlayPause: ImageButton
     private lateinit var btnNext: ImageButton
     private lateinit var btnShuffle: ImageButton
+    private lateinit var loadingOverlay: View
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             val local = binder as? MusicPlayerService.LocalBinder
@@ -56,7 +61,7 @@ class MainActivity : AppCompatActivity() {
             playerService?.let { svc ->
                 serviceListener = object : MusicPlayerService.ServiceListener {
                     override fun onMediaItemTransition(uri: String?) {
-                        runOnUiThread {
+                        lifecycleScope.launch(Dispatchers.Main) {
                             try {
                                 val parsed = if (uri != null) Uri.parse(uri) else null
                                 adapter.setPlayingUri(parsed)
@@ -67,14 +72,14 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
-                        runOnUiThread {
+                        lifecycleScope.launch(Dispatchers.Main) {
                             if (isPlaying) btnPlayPause.setImageResource(R.drawable.pause_circle_24px)
                             else btnPlayPause.setImageResource(R.drawable.play_circle_24px)
                         }
                     }
 
                     override fun onShuffleModeChanged(shuffleEnabled: Boolean) {
-                        runOnUiThread {
+                        lifecycleScope.launch(Dispatchers.Main) {
                             if (shuffleEnabled) {
                                 btnShuffle.setImageResource(R.drawable.shuffle_on_24px)
                                 btnShuffle.alpha = 1f
@@ -138,6 +143,7 @@ class MainActivity : AppCompatActivity() {
 
         drawerLayout = findViewById<DrawerLayout>(R.id.drawer_layout)
         navView = findViewById<com.google.android.material.navigation.NavigationView>(R.id.nav_view)
+        loadingOverlay = findViewById(R.id.loading_overlay)
 
         val toggle = ActionBarDrawerToggle(
             this,
@@ -230,21 +236,25 @@ class MainActivity : AppCompatActivity() {
                     }
 
                     // show loading overlay and run enrichment (scan + persist) off UI thread
-                    val loading = findViewById<android.view.View>(R.id.loading_overlay)
-                    runOnUiThread { loading.visibility = android.view.View.VISIBLE }
+                    lifecycleScope.launch(Dispatchers.Main) {
+                        Log.d(TAG, "showing loading overlay (pickedDir)")
+                        try { loadingOverlay.bringToFront(); loadingOverlay.requestLayout(); loadingOverlay.invalidate() } catch (e: Exception) { Log.w(TAG, "bringToFront failed", e) }
+                        loadingOverlay.visibility = android.view.View.VISIBLE
+                    }
 
-                    Thread {
+                    lifecycleScope.launch(Dispatchers.IO) {
                         val results = mutableListOf<MusicFile>()
                         scanDocumentFile(pickedDir, results)
                         // sort tracks alphabetically by title (case-insensitive) before persisting and showing
                         results.sortWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
                         // persist tracks in DB
                         dbHelper.insertTracks(uri.toString(), results)
-                        runOnUiThread {
+                        withContext(Dispatchers.Main) {
                             adapter.update(results)
-                            loading.visibility = android.view.View.GONE
+                            Log.d(TAG, "scheduling hide of loading overlay after adapter update (pickedDir)")
+                            recyclerView.post { try { loadingOverlay.visibility = android.view.View.GONE; Log.d(TAG, "loading overlay hidden (pickedDir)") } catch (e: Exception) { Log.w(TAG, "failed hiding loading overlay", e) } }
                         }
-                    }.start()
+                    }
                 }
             }
         }
@@ -260,22 +270,24 @@ class MainActivity : AppCompatActivity() {
                     val dataUri = intent?.data
                     if (dataUri != null) {
                         val dirUriStr = dataUri.toString()
-                        Thread {
+                        lifecycleScope.launch(Dispatchers.IO) {
                             val saved = dbHelper.getTracksForDir(dirUriStr)
-                            runOnUiThread {
-                                if (saved.isNotEmpty()) {
-                                    adapter.update(saved)
-                                                    // hide empty hint when we have tracks
-                                                    emptyHint.visibility = View.GONE
-                                    // persist last selected dir and mark item checked
-                                    getPrefs().edit().putString(KEY_LAST_SELECTED, dirUriStr).apply()
-                                    menuItem.isChecked = true
-                                    navView.setCheckedItem(menuItem.itemId)
-                                } else {
-                                    Toast.makeText(this, "No hay pistas guardadas para este directorio", Toast.LENGTH_SHORT).show()
+                            withContext(Dispatchers.Main) {
+                                    if (saved.isNotEmpty()) {
+                                        adapter.update(saved)
+                                        // hide empty hint when we have tracks
+                                        emptyHint.visibility = View.GONE
+                                        // persist last selected dir and mark item checked
+                                        getPrefs().edit().putString(KEY_LAST_SELECTED, dirUriStr).apply()
+                                        menuItem.isChecked = true
+                                        navView.setCheckedItem(menuItem.itemId)
+                                        // ensure overlay stays until list drawn
+                                        recyclerView.post { try { loadingOverlay.visibility = android.view.View.GONE } catch (e: Exception) { Log.w(TAG, "failed hiding loading overlay", e) } }
+                                    } else {
+                                        Toast.makeText(this@MainActivity, "No hay pistas guardadas para este directorio", Toast.LENGTH_SHORT).show()
+                                    }
                                 }
-                            }
-                        }.start()
+                        }
                     }
                 }
             }
@@ -285,16 +297,17 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadTracksForDir(dirUriStr: String) {
-        Thread {
+        lifecycleScope.launch(Dispatchers.IO) {
             val saved = dbHelper.getTracksForDir(dirUriStr)
-            runOnUiThread {
+            withContext(Dispatchers.Main) {
                 if (saved.isNotEmpty()) {
                     adapter.update(saved)
+                    recyclerView.post { try { loadingOverlay.visibility = android.view.View.GONE } catch (e: Exception) { Log.w(TAG, "failed hiding loading overlay", e) } }
                 } else {
-                    Toast.makeText(this, "No hay pistas guardadas para este directorio", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, "No hay pistas guardadas para este directorio", Toast.LENGTH_SHORT).show()
                 }
             }
-        }.start()
+        }
     }
 
     private fun scanDocumentFile(doc: DocumentFile, out: MutableList<MusicFile>) {
@@ -347,6 +360,13 @@ class MainActivity : AppCompatActivity() {
     private fun getPrefs(): SharedPreferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
 
     private fun loadSavedDirectories(navView: NavigationView) {
+        // show loading overlay while we prepare the drawer
+        lifecycleScope.launch(Dispatchers.Main) {
+            try { loadingOverlay.bringToFront(); loadingOverlay.requestLayout(); loadingOverlay.invalidate() } catch (e: Exception) { Log.w(TAG, "bringToFront failed", e) }
+            loadingOverlay.visibility = android.view.View.VISIBLE
+            Log.d(TAG, "showing loading overlay (loadSavedDirectories)")
+        }
+
         val prefs = getPrefs()
         val json = prefs.getString(KEY_SAVED_DIRS, null)
         if (json.isNullOrEmpty()) {
@@ -356,6 +376,8 @@ class MainActivity : AppCompatActivity() {
             menu.removeItem(HINT_ITEM_ID)
             menu.setGroupCheckable(DIR_MENU_GROUP, true, true)
             emptyHint.visibility = View.VISIBLE
+            // nothing to load -> hide overlay
+            lifecycleScope.launch(Dispatchers.Main) { loadingOverlay.visibility = android.view.View.GONE }
             return
         }
 
@@ -377,6 +399,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         populateMenuWithDirs(navView, navView.menu, names, uris, prefs.getString(KEY_LAST_SELECTED, null))
+        // populateMenuWithDirs will call loadTracksForDir when appropriate which will hide the overlay.
     }
 
     private fun populateDrawerFromIntent(navView: NavigationView) {
@@ -388,6 +411,11 @@ class MainActivity : AppCompatActivity() {
         val menu = navView.menu
         // delegate to helper if we have names/uris
         if (names != null && uris != null && names.size == uris.size && names.isNotEmpty()) {
+            lifecycleScope.launch(Dispatchers.Main) {
+                try { loadingOverlay.bringToFront(); loadingOverlay.requestLayout(); loadingOverlay.invalidate() } catch (e: Exception) { Log.w(TAG, "bringToFront failed", e) }
+                loadingOverlay.visibility = android.view.View.VISIBLE
+                Log.d(TAG, "showing loading overlay (populateDrawerFromIntent)")
+            }
             populateMenuWithDirs(navView, menu, names, uris, lastSelected)
         } else {
             // fallback to prefs-based loading
@@ -396,10 +424,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun proceedAfterPermission() {
-        val loading = findViewById<android.view.View>(R.id.loading_overlay)
-        runOnUiThread { loading.visibility = android.view.View.VISIBLE }
+        lifecycleScope.launch(Dispatchers.Main) {
+            Log.d(TAG, "showing loading overlay (proceedAfterPermission)")
+            try { loadingOverlay.bringToFront(); loadingOverlay.requestLayout(); loadingOverlay.invalidate() } catch (e: Exception) { Log.w(TAG, "bringToFront failed", e) }
+            loadingOverlay.visibility = android.view.View.VISIBLE
+        }
 
-        Thread {
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val prefs = getPrefs()
                 val json = prefs.getString(KEY_SAVED_DIRS, null)
@@ -417,7 +448,7 @@ class MainActivity : AppCompatActivity() {
                             if (!uriStr.isNullOrEmpty()) {
                                 try {
                                     val uri = Uri.parse(uriStr)
-                                    val df = DocumentFile.fromTreeUri(this, uri)
+                                    val df = DocumentFile.fromTreeUri(this@MainActivity, uri)
                                     if (df != null && df.isDirectory) {
                                         names.add(name)
                                         uris.add(uriStr)
@@ -435,14 +466,14 @@ class MainActivity : AppCompatActivity() {
                 val last = prefs.getString(KEY_LAST_SELECTED, null)
                 if (!last.isNullOrEmpty()) {
                     try {
-                        val db = MusicDbHelper(this)
+                        val db = MusicDbHelper(this@MainActivity)
                         db.getTracksForDir(last)
                     } catch (e: Exception) {
                         // ignore DB preload errors
                     }
                 }
 
-                runOnUiThread {
+                withContext(Dispatchers.Main) {
                     val menu = navView.menu
                     if (names.isNotEmpty() && uris.isNotEmpty() && names.size == uris.size) {
                         populateMenuWithDirs(navView, menu, names, uris, last)
@@ -451,18 +482,16 @@ class MainActivity : AppCompatActivity() {
                         loadSavedDirectories(navView)
                     }
 
-                    // hide loading overlay after UI updated
-                    try {
-                        loading.visibility = android.view.View.GONE
-                    } catch (e: Exception) { }
+                    // If adapter already has items hide overlay after layout, otherwise loaders (loadTracksForDir)
+                    recyclerView.post { try { if (recyclerView.childCount > 0) { loadingOverlay.visibility = android.view.View.GONE; Log.d(TAG, "loading overlay hidden (proceedAfterPermission immediate)") } } catch (e: Exception) { Log.w(TAG, "failed hiding loading overlay", e) } }
                 }
             } finally {
                 // ensure overlay hidden in case of unexpected errors
                 try {
-                    runOnUiThread { loading.visibility = android.view.View.GONE }
+                    withContext(Dispatchers.Main) { loadingOverlay.visibility = android.view.View.GONE }
                 } catch (e: Exception) { Log.w(TAG, "failed hiding loading overlay", e) }
             }
-        }.start()
+        }
     }
 
     private fun addDirectoryToSaved(name: String, uriStr: String) {
@@ -532,11 +561,11 @@ class MainActivity : AppCompatActivity() {
                     }
 
                 // delete tracks in DB off UI thread
-                Thread {
+                lifecycleScope.launch(Dispatchers.IO) {
                     try {
                         dbHelper.deleteTracksForDir(dirUriStr)
                     } catch (e: Exception) { Log.w(TAG, "failed deleting tracks for dir: $dirUriStr", e) }
-                }.start()
+                }
 
                 // remove menu item and select first available
                     try {
