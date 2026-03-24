@@ -1,6 +1,5 @@
 package com.csoft.musicapp
 
-import android.Manifest
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -24,6 +23,7 @@ import com.google.android.material.navigation.NavigationView
 import androidx.documentfile.provider.DocumentFile
 import android.media.MediaMetadataRetriever
 import android.content.SharedPreferences
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import android.view.Menu
@@ -39,7 +39,7 @@ class MainActivity : AppCompatActivity() {
     private val musicList = mutableListOf<MusicFile>()
     private lateinit var openDocumentTreeLauncher: ActivityResultLauncher<Uri?>
     private lateinit var requestPermissionLauncher: ActivityResultLauncher<String>
-    private lateinit var navView: com.google.android.material.navigation.NavigationView
+    private lateinit var navView: NavigationView
     private var playerService: MusicPlayerService? = null
     private var serviceBound: Boolean = false
     private var serviceListener: MusicPlayerService.ServiceListener? = null
@@ -61,6 +61,7 @@ class MainActivity : AppCompatActivity() {
                                 val parsed = if (uri != null) Uri.parse(uri) else null
                                 adapter.setPlayingUri(parsed)
                             } catch (e: Exception) {
+                                Log.w(TAG, "onMediaItemTransition UI update failed", e)
                             }
                         }
                     }
@@ -86,29 +87,27 @@ class MainActivity : AppCompatActivity() {
                 }
                 serviceListener?.let { svc.registerListener(it) }
 
-                // sync initial UI state
-                runOnUiThread {
-                    try {
-                        val svc = playerService
-                        if (svc != null) {
-                            if (svc.isPlaying()) btnPlayPause.setImageResource(R.drawable.pause_circle_24px)
-                            else btnPlayPause.setImageResource(R.drawable.play_circle_24px)
-                            if (svc.isShuffleEnabled()) {
-                                btnShuffle.setImageResource(R.drawable.shuffle_on_24px)
-                                btnShuffle.alpha = 1f
-                            } else {
-                                btnShuffle.setImageResource(R.drawable.shuffle_24px)
-                                btnShuffle.alpha = 0.6f
-                            }
-                            val cur = svc.getCurrentMediaUri()
-                            if (cur is String && cur.isNotEmpty()) adapter.setPlayingUri(Uri.parse(cur))
+                // sync initial UI state (already on main thread)
+                try {
+                    val svc = playerService
+                    if (svc != null) {
+                        if (svc.isPlaying()) btnPlayPause.setImageResource(R.drawable.pause_circle_24px)
+                        else btnPlayPause.setImageResource(R.drawable.play_circle_24px)
+                        if (svc.isShuffleEnabled()) {
+                            btnShuffle.setImageResource(R.drawable.shuffle_on_24px)
+                            btnShuffle.alpha = 1f
                         } else {
-                            btnPlayPause.setImageResource(R.drawable.play_circle_24px)
                             btnShuffle.setImageResource(R.drawable.shuffle_24px)
                             btnShuffle.alpha = 0.6f
                         }
-                    } catch (e: Exception) {}
-                }
+                        val cur = svc.getCurrentMediaUri()
+                        if (cur is String && cur.isNotEmpty()) adapter.setPlayingUri(Uri.parse(cur))
+                    } else {
+                        btnPlayPause.setImageResource(R.drawable.play_circle_24px)
+                        btnShuffle.setImageResource(R.drawable.shuffle_24px)
+                        btnShuffle.alpha = 0.6f
+                    }
+                    } catch (e: Exception) { Log.w(TAG, "sync initial UI state failed", e) }
             }
         }
 
@@ -118,12 +117,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
     private lateinit var dbHelper: MusicDbHelper
-    private val PREFS_NAME = "musicapp_prefs"
-    private val KEY_SAVED_DIRS = "saved_dirs"
-    private val KEY_LAST_SELECTED = "last_selected_dir"
-    private val DIR_MENU_GROUP = 100
-    private val HINT_ITEM_ID = 9999
     private lateinit var emptyHint: View
+
+    companion object {
+        private const val TAG = "MainActivity"
+        private const val PREFS_NAME = "musicapp_prefs"
+        private const val KEY_SAVED_DIRS = "saved_dirs"
+        private const val KEY_LAST_SELECTED = "last_selected_dir"
+        private const val DIR_MENU_GROUP = 100
+        private const val HINT_ITEM_ID = 9999
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -167,8 +170,7 @@ class MainActivity : AppCompatActivity() {
         btnShuffle = findViewById<ImageButton>(R.id.btn_shuffle)
 
         btnPrev.setOnClickListener {
-            if (serviceBound) playerService?.let { Intent(this, MusicPlayerService::class.java).also { it.action = MusicPlayerService.ACTION_SKIP_PREV; startService(it) } }
-            else Intent(this, MusicPlayerService::class.java).also { it.action = MusicPlayerService.ACTION_SKIP_PREV; startService(it) }
+            Intent(this, MusicPlayerService::class.java).also { it.action = MusicPlayerService.ACTION_SKIP_PREV; startService(it) }
         }
         btnPlayPause.setOnClickListener {
             if (serviceBound && playerService != null) {
@@ -208,9 +210,9 @@ class MainActivity : AppCompatActivity() {
                 try {
                     val takeFlags: Int = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
                     contentResolver.takePersistableUriPermission(uri, takeFlags)
-                } catch (e: Exception) {
-                    // ignore if permission not available
-                }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "takePersistableUriPermission failed", e)
+                    }
 
                 val pickedDir = DocumentFile.fromTreeUri(this, uri)
                 if (pickedDir != null && pickedDir.isDirectory) {
@@ -312,29 +314,30 @@ class MainActivity : AppCompatActivity() {
                 try {
                     val uri = doc.uri
                     val retriever = MediaMetadataRetriever()
-                    try {
-                        val pfd = contentResolver.openFileDescriptor(uri, "r")
-                        pfd?.use {
-                            retriever.setDataSource(it.fileDescriptor)
-                            val titleMeta = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
-                            val artistMeta = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
-                            if (!titleMeta.isNullOrBlank()) {
-                                title = titleMeta
-                            } else {
-                                val dot = name.lastIndexOf('.')
-                                if (dot > 0) title = name.substring(0, dot)
+                            try {
+                                val pfd = contentResolver.openFileDescriptor(uri, "r")
+                                pfd?.use {
+                                    retriever.setDataSource(it.fileDescriptor)
+                                    val titleMeta = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                                    val artistMeta = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                                    if (!titleMeta.isNullOrBlank()) {
+                                        title = titleMeta
+                                    } else {
+                                        val dot = name.lastIndexOf('.')
+                                        if (dot > 0) title = name.substring(0, dot)
+                                    }
+                                    if (!artistMeta.isNullOrBlank()) {
+                                        artist = artistMeta
+                                    }
+                                }
+                            } finally {
+                                retriever.release()
                             }
-                            if (!artistMeta.isNullOrBlank()) {
-                                artist = artistMeta
-                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "metadata extraction failed for $name", e)
+                            val dot = name.lastIndexOf('.')
+                            if (dot > 0) title = name.substring(0, dot)
                         }
-                    } finally {
-                        retriever.release()
-                    }
-                } catch (e: Exception) {
-                    val dot = name.lastIndexOf('.')
-                    if (dot > 0) title = name.substring(0, dot)
-                }
 
                 out.add(MusicFile(title, artist, doc.uri))
             }
@@ -346,76 +349,34 @@ class MainActivity : AppCompatActivity() {
     private fun loadSavedDirectories(navView: NavigationView) {
         val prefs = getPrefs()
         val json = prefs.getString(KEY_SAVED_DIRS, null)
-        val menu = navView.menu
-        // clear previous entries
-        menu.removeGroup(DIR_MENU_GROUP)
-        menu.removeItem(HINT_ITEM_ID)
-        // make our group checkable (single selection)
-        menu.setGroupCheckable(DIR_MENU_GROUP, true, true)
         if (json.isNullOrEmpty()) {
             // no saved dirs -> show hint in main activity
+            val menu = navView.menu
+            menu.removeGroup(DIR_MENU_GROUP)
+            menu.removeItem(HINT_ITEM_ID)
+            menu.setGroupCheckable(DIR_MENU_GROUP, true, true)
             emptyHint.visibility = View.VISIBLE
             return
         }
+
+        val names = ArrayList<String>()
+        val uris = ArrayList<String>()
         try {
             val arr = JSONArray(json)
             for (i in 0 until arr.length()) {
-                val obj = arr.getJSONObject(i)
-                val name = obj.optString("name")
-                val uriStr = obj.optString("uri")
-                if (uriStr.isNullOrEmpty()) continue
-                val uri = Uri.parse(uriStr)
-                addDirectoryMenuItem(menu, name, uri)
-            }
-
-            // count entries in our group
-            var groupCount = 0
-            for (i in 0 until menu.size()) {
-                if (menu.getItem(i).groupId == DIR_MENU_GROUP) groupCount++
-            }
-            if (groupCount == 0) {
-                emptyHint.visibility = View.VISIBLE
-                return
-            } else {
-                emptyHint.visibility = View.GONE
-            }
-
-            // If there are saved directories, select last selected (or last in list)
-            val lastSelected = prefs.getString(KEY_LAST_SELECTED, null)
-            var selected: MenuItem? = null
-            if (!lastSelected.isNullOrEmpty()) {
-                for (i in 0 until menu.size()) {
-                    val it = menu.getItem(i)
-                    val intent = it.intent
-                    val dataUri = intent?.data
-                    if (dataUri != null && dataUri.toString() == lastSelected) {
-                        selected = it
-                        break
-                    }
-                }
-            }
-            if (selected == null) {
-                // pick last menu item in our group
-                for (i in menu.size() - 1 downTo 0) {
-                    val it = menu.getItem(i)
-                    if (it.groupId == DIR_MENU_GROUP) {
-                        selected = it
-                        break
-                    }
-                }
-            }
-            if (selected != null) {
-                val dirUri = selected.intent?.data?.toString()
-                if (!dirUri.isNullOrEmpty()) {
-                    // load tracks and mark checked
-                    loadTracksForDir(dirUri)
-                    selected.isChecked = true
-                    navView.setCheckedItem(selected.itemId)
+                val obj = arr.optJSONObject(i)
+                val name = obj?.optString("name") ?: "Directorio"
+                val uriStr = obj?.optString("uri")
+                if (!uriStr.isNullOrEmpty()) {
+                    names.add(name)
+                    uris.add(uriStr)
                 }
             }
         } catch (e: Exception) {
-            // ignore
+            Log.w(TAG, "malformed saved dirs JSON", e)
         }
+
+        populateMenuWithDirs(navView, navView.menu, names, uris, prefs.getString(KEY_LAST_SELECTED, null))
     }
 
     private fun populateDrawerFromIntent(navView: NavigationView) {
@@ -425,60 +386,9 @@ class MainActivity : AppCompatActivity() {
         val lastSelected = intent.getStringExtra("last_selected")
 
         val menu = navView.menu
-        // clear previous entries
-        menu.removeGroup(DIR_MENU_GROUP)
-        menu.removeItem(HINT_ITEM_ID)
-        menu.setGroupCheckable(DIR_MENU_GROUP, true, true)
-
+        // delegate to helper if we have names/uris
         if (names != null && uris != null && names.size == uris.size && names.isNotEmpty()) {
-            for (i in 0 until names.size) {
-                try {
-                    val name = names[i]
-                    val uri = Uri.parse(uris[i])
-                    addDirectoryMenuItem(menu, name, uri)
-                } catch (e: Exception) {
-                    // ignore individual failures
-                }
-            }
-
-            // mark last selected if present
-            if (!lastSelected.isNullOrEmpty()) {
-                for (i in 0 until menu.size()) {
-                    val it = menu.getItem(i)
-                    val dataUri = it.intent?.data
-                    if (dataUri != null && dataUri.toString() == lastSelected) {
-                        it.isChecked = true
-                        navView.setCheckedItem(it.itemId)
-                        loadTracksForDir(lastSelected)
-                        break
-                    }
-                }
-            } else {
-                // if nothing selected, preserve MainActivity behavior to show hint or last item
-                // count entries in our group
-                var groupCount = 0
-                for (i in 0 until menu.size()) {
-                    if (menu.getItem(i).groupId == DIR_MENU_GROUP) groupCount++
-                }
-                if (groupCount == 0) {
-                    emptyHint.visibility = View.VISIBLE
-                } else {
-                    emptyHint.visibility = View.GONE
-                    // load last item by default
-                    for (i in menu.size() - 1 downTo 0) {
-                        val it = menu.getItem(i)
-                        if (it.groupId == DIR_MENU_GROUP) {
-                            val dirUri = it.intent?.data?.toString()
-                            if (!dirUri.isNullOrEmpty()) {
-                                loadTracksForDir(dirUri)
-                                it.isChecked = true
-                                navView.setCheckedItem(it.itemId)
-                            }
-                            break
-                        }
-                    }
-                }
-            }
+            populateMenuWithDirs(navView, menu, names, uris, lastSelected)
         } else {
             // fallback to prefs-based loading
             loadSavedDirectories(navView)
@@ -534,57 +444,8 @@ class MainActivity : AppCompatActivity() {
 
                 runOnUiThread {
                     val menu = navView.menu
-                    // clear previous entries
-                    menu.removeGroup(DIR_MENU_GROUP)
-                    menu.removeItem(HINT_ITEM_ID)
-                    menu.setGroupCheckable(DIR_MENU_GROUP, true, true)
-
                     if (names.isNotEmpty() && uris.isNotEmpty() && names.size == uris.size) {
-                        for (i in 0 until names.size) {
-                            try {
-                                val name = names[i]
-                                val uri = Uri.parse(uris[i])
-                                addDirectoryMenuItem(menu, name, uri)
-                            } catch (e: Exception) {
-                                // ignore individual failures
-                            }
-                        }
-
-                        if (!last.isNullOrEmpty()) {
-                            for (i in 0 until menu.size()) {
-                                val it = menu.getItem(i)
-                                val dataUri = it.intent?.data
-                                if (dataUri != null && dataUri.toString() == last) {
-                                    it.isChecked = true
-                                    navView.setCheckedItem(it.itemId)
-                                    loadTracksForDir(last)
-                                    break
-                                }
-                            }
-                        } else {
-                            // fallback to default behavior
-                            var groupCount = 0
-                            for (i in 0 until menu.size()) {
-                                if (menu.getItem(i).groupId == DIR_MENU_GROUP) groupCount++
-                            }
-                            if (groupCount == 0) {
-                                emptyHint.visibility = View.VISIBLE
-                            } else {
-                                emptyHint.visibility = View.GONE
-                                for (i in menu.size() - 1 downTo 0) {
-                                    val it = menu.getItem(i)
-                                    if (it.groupId == DIR_MENU_GROUP) {
-                                        val dirUri = it.intent?.data?.toString()
-                                        if (!dirUri.isNullOrEmpty()) {
-                                            loadTracksForDir(dirUri)
-                                            it.isChecked = true
-                                            navView.setCheckedItem(it.itemId)
-                                        }
-                                        break
-                                    }
-                                }
-                            }
-                        }
+                        populateMenuWithDirs(navView, menu, names, uris, last)
                     } else {
                         // fallback to prefs-based loading
                         loadSavedDirectories(navView)
@@ -599,7 +460,7 @@ class MainActivity : AppCompatActivity() {
                 // ensure overlay hidden in case of unexpected errors
                 try {
                     runOnUiThread { loading.visibility = android.view.View.GONE }
-                } catch (e: Exception) { }
+                } catch (e: Exception) { Log.w(TAG, "failed hiding loading overlay", e) }
             }
         }.start()
     }
@@ -641,46 +502,46 @@ class MainActivity : AppCompatActivity() {
         try {
             val actionView = layoutInflater.inflate(R.layout.nav_dir_item, null)
             // ensure the inflated view fills available menu width
-            try { actionView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) } catch (e: Exception) { }
+            try { actionView.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT) } catch (e: Exception) { Log.w(TAG, "failed setting actionView.layoutParams", e) }
             val tv = actionView.findViewById<TextView>(R.id.dir_name)
             val btn = actionView.findViewById<ImageButton>(R.id.btn_delete)
             tv.text = name
 
             // ensure delete button does not steal focus from menu selection
-            try { btn.isFocusable = false; btn.isFocusableInTouchMode = false } catch (e: Exception) { }
+            try { btn.isFocusable = false; btn.isFocusableInTouchMode = false } catch (e: Exception) { Log.w(TAG, "failed setting delete button focusable", e) }
 
             btn.setOnClickListener {
                 val dirUriStr = uri.toString()
                 // remove from saved prefs
-                try {
-                    val prefs = getPrefs()
-                    val json = prefs.getString(KEY_SAVED_DIRS, null)
-                    if (!json.isNullOrEmpty()) {
-                        val arr = JSONArray(json)
-                        val newArr = JSONArray()
-                        for (i in 0 until arr.length()) {
-                            val obj = arr.optJSONObject(i)
-                            if (obj != null && obj.optString("uri") != dirUriStr) {
-                                newArr.put(obj)
+                    try {
+                        val prefs = getPrefs()
+                        val json = prefs.getString(KEY_SAVED_DIRS, null)
+                        if (!json.isNullOrEmpty()) {
+                            val arr = JSONArray(json)
+                            val newArr = JSONArray()
+                            for (i in 0 until arr.length()) {
+                                val obj = arr.optJSONObject(i)
+                                if (obj != null && obj.optString("uri") != dirUriStr) {
+                                    newArr.put(obj)
+                                }
                             }
+                            prefs.edit().putString(KEY_SAVED_DIRS, newArr.toString()).apply()
                         }
-                        prefs.edit().putString(KEY_SAVED_DIRS, newArr.toString()).apply()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "failed removing saved dir from prefs: $dirUriStr", e)
                     }
-                } catch (e: Exception) {
-                    // ignore prefs removal errors
-                }
 
                 // delete tracks in DB off UI thread
                 Thread {
                     try {
                         dbHelper.deleteTracksForDir(dirUriStr)
-                    } catch (e: Exception) { }
+                    } catch (e: Exception) { Log.w(TAG, "failed deleting tracks for dir: $dirUriStr", e) }
                 }.start()
 
                 // remove menu item and select first available
-                try {
-                    menu.removeItem(itemId)
-                } catch (e: Exception) { }
+                    try {
+                        menu.removeItem(itemId)
+                    } catch (e: Exception) { Log.w(TAG, "failed removing menu item: $itemId", e) }
 
                 // find first item in our group
                 var firstItem: MenuItem? = null
@@ -711,13 +572,69 @@ class MainActivity : AppCompatActivity() {
 
             actionView.setOnClickListener {
                 // forward click to the menu so selection behaves normally
-                try { menu.performIdentifierAction(item.itemId, 0) } catch (e: Exception) { }
+                try { menu.performIdentifierAction(item.itemId, 0) } catch (e: Exception) { Log.w(TAG, "performIdentifierAction failed for ${item.itemId}", e) }
             }
 
             item.actionView = actionView
         } catch (e: Exception) {
             // fallback: keep plain title if inflation fails
             item.title = name
+        }
+    }
+
+    private fun populateMenuWithDirs(navView: NavigationView, menu: Menu, names: List<String>, uris: List<String>, lastSelected: String?) {
+        // clear previous entries
+        menu.removeGroup(DIR_MENU_GROUP)
+        menu.removeItem(HINT_ITEM_ID)
+        menu.setGroupCheckable(DIR_MENU_GROUP, true, true)
+
+        for (i in names.indices) {
+            try {
+                val name = names[i]
+                val uri = Uri.parse(uris[i])
+                addDirectoryMenuItem(menu, name, uri)
+            } catch (e: Exception) {
+                Log.w(TAG, "failed adding directory menu item: ${'$'}i", e)
+            }
+        }
+
+        // count entries in our group
+        var groupCount = 0
+        for (i in 0 until menu.size()) {
+            if (menu.getItem(i).groupId == DIR_MENU_GROUP) groupCount++
+        }
+        if (groupCount == 0) {
+            emptyHint.visibility = View.VISIBLE
+            return
+        } else {
+            emptyHint.visibility = View.GONE
+        }
+
+        // select lastSelected if present, otherwise last in group
+        var selected: MenuItem? = null
+        if (!lastSelected.isNullOrEmpty()) {
+            for (i in 0 until menu.size()) {
+                val it = menu.getItem(i)
+                val dataUri = it.intent?.data
+                if (dataUri != null && dataUri.toString() == lastSelected) {
+                    selected = it
+                    break
+                }
+            }
+        }
+        if (selected == null) {
+            for (i in menu.size() - 1 downTo 0) {
+                val it = menu.getItem(i)
+                if (it.groupId == DIR_MENU_GROUP) { selected = it; break }
+            }
+        }
+        if (selected != null) {
+            val dirUri = selected.intent?.data?.toString()
+            if (!dirUri.isNullOrEmpty()) {
+                loadTracksForDir(dirUri)
+                selected.isChecked = true
+                navView.setCheckedItem(selected.itemId)
+            }
         }
     }
 
@@ -795,20 +712,19 @@ class MainActivity : AppCompatActivity() {
         try {
             adapter.setPlayingUri(musicFile.uri)
         } catch (e: Exception) {
+            Log.w(TAG, "adapter.setPlayingUri failed for ${musicFile.uri}", e)
         }
     }
 
-    override fun onPause() {
-        super.onPause()
-    }
+
 
     override fun onDestroy() {
         super.onDestroy()
         if (serviceBound) {
             try {
                 serviceListener?.let { playerService?.unregisterListener(it) }
-            } catch (e: Exception) { }
-            try { unbindService(serviceConnection) } catch (e: Exception) { }
+            } catch (e: Exception) { Log.w(TAG, "failed unregistering service listener", e) }
+            try { unbindService(serviceConnection) } catch (e: Exception) { Log.w(TAG, "failed unbinding service", e) }
             serviceBound = false
         }
     }
