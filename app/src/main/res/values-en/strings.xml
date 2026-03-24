@@ -3,4 +3,5 @@
     <string name="add_directory">Add directory</string>
     <string name="activity_loading_message">Loading...</string>
     <string name="activity_main_empty_hint">Swipe the the drawer to the right to add a music folder</string>
+    <string name="loading_overlay_text">Loading...</string>
 </resources>

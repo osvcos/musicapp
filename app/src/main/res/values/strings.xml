@@ -6,4 +6,5 @@
     <string name="notification_channel_name">Reproducción de música</string>
     <string name="activity_loading_message">Cargando...</string>
     <string name="activity_main_empty_hint">Desliza el drawer hacia la derecha para agregar una carpeta de música</string>
+    <string name="loading_overlay_text">Cargando...</string>
 </resources>
