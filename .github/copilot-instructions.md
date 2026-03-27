@@ -1,0 +1,2 @@
+- Always try to use comments where possible.
+- Use descriptive variable and function names.
