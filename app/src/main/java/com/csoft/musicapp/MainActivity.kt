@@ -260,38 +260,43 @@ class MainActivity : AppCompatActivity() {
                     val menu = navView.menu
                     val existingItem = try { menu.findItem(assignedId) } catch (e: Exception) { null }
                     if (existingItem != null) {
-                        // mark existing item as selected
+                        // already saved: select existing item, persist last selection and show a brief message
                         try { navView.setCheckedItem(assignedId) } catch (e: Exception) { /* ignore */ }
+                        emptyHint.visibility = View.GONE
+                        getPrefs().edit().putString(KEY_LAST_SELECTED, uri.toString()).apply()
+                        lifecycleScope.launch(Dispatchers.Main) {
+                            try { Toast.makeText(this@MainActivity, "Directorio ya agregado", Toast.LENGTH_SHORT).show() } catch (e: Exception) { Log.w(TAG, "failed showing toast for existing dir", e) }
+                        }
                     } else {
                         addDirectoryToDrawer(navView, displayName, uri, assignedId)
-                    }
-                    // hide empty hint and save as last selected
-                    emptyHint.visibility = View.GONE
-                    getPrefs().edit().putString(KEY_LAST_SELECTED, uri.toString()).apply()
-                    try {
-                        navView.setCheckedItem(assignedId)
-                    } catch (e: Exception) {
-                        // ignore
-                    }
+                        // hide empty hint and save as last selected
+                        emptyHint.visibility = View.GONE
+                        getPrefs().edit().putString(KEY_LAST_SELECTED, uri.toString()).apply()
+                        try {
+                            navView.setCheckedItem(assignedId)
+                        } catch (e: Exception) {
+                            // ignore
+                        }
 
-                    // show loading overlay and run enrichment (scan + persist) off UI thread
-                    lifecycleScope.launch(Dispatchers.Main) {
-                        Log.d(TAG, "showing loading overlay (pickedDir)")
-                        try { loadingOverlay.bringToFront(); loadingOverlay.requestLayout(); loadingOverlay.invalidate() } catch (e: Exception) { Log.w(TAG, "bringToFront failed", e) }
-                        loadingOverlay.visibility = android.view.View.VISIBLE
-                    }
+                        // show loading overlay and run enrichment (scan + persist) off UI thread
+                        lifecycleScope.launch(Dispatchers.Main) {
+                            Log.d(TAG, "showing loading overlay (pickedDir)")
+                            try { loadingOverlay.bringToFront(); loadingOverlay.requestLayout(); loadingOverlay.invalidate() } catch (e: Exception) { Log.w(TAG, "bringToFront failed", e) }
+                            loadingOverlay.visibility = android.view.View.VISIBLE
+                        }
 
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        val results = mutableListOf<MusicFile>()
-                        scanDocumentFile(pickedDir, results)
-                        // sort tracks alphabetically by title (case-insensitive) before persisting and showing
-                        results.sortWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
-                        // persist tracks in DB
-                        dbHelper.insertTracks(uri.toString(), results)
-                        withContext(Dispatchers.Main) {
-                            adapter.update(results)
-                            Log.d(TAG, "scheduling hide of loading overlay after adapter update (pickedDir)")
-                            recyclerView.post { try { loadingOverlay.visibility = android.view.View.GONE; Log.d(TAG, "loading overlay hidden (pickedDir)") } catch (e: Exception) { Log.w(TAG, "failed hiding loading overlay", e) } }
+                        lifecycleScope.launch(Dispatchers.IO) {
+                            val results = mutableListOf<MusicFile>()
+                            scanDocumentFile(pickedDir, results)
+                            // sort tracks alphabetically by title (case-insensitive) before persisting and showing
+                            results.sortWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+                            // persist tracks in DB
+                            dbHelper.insertTracks(uri.toString(), results)
+                            withContext(Dispatchers.Main) {
+                                adapter.update(results)
+                                Log.d(TAG, "scheduling hide of loading overlay after adapter update (pickedDir)")
+                                recyclerView.post { try { loadingOverlay.visibility = android.view.View.GONE; Log.d(TAG, "loading overlay hidden (pickedDir)") } catch (e: Exception) { Log.w(TAG, "failed hiding loading overlay", e) } }
+                            }
                         }
                     }
                 }
