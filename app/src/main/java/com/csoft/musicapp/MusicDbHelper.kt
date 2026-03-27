@@ -9,7 +9,7 @@ class MusicDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
 
     companion object {
         private const val DATABASE_NAME = "musicapp.db"
-        private const val DATABASE_VERSION = 2
+        private const val DATABASE_VERSION = 3
 
         private const val TABLE_TRACKS = "tracks"
         private const val COL_ID = "id"
@@ -17,6 +17,7 @@ class MusicDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         private const val COL_ARTIST = "artist"
         private const val COL_URI = "uri"
         private const val COL_DIR_URI = "dir_uri"
+        private const val COL_FILENAME = "filename"
     }
 
     override fun onCreate(db: SQLiteDatabase) {
@@ -26,27 +27,38 @@ class MusicDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                 $COL_NAME TEXT,
                 $COL_ARTIST TEXT,
                 $COL_URI TEXT UNIQUE,
-                $COL_DIR_URI TEXT
+                $COL_DIR_URI TEXT,
+                $COL_FILENAME TEXT
             );
         """.trimIndent()
         db.execSQL(sql)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS $TABLE_TRACKS")
-        onCreate(db)
+        if (oldVersion < 3) {
+            try {
+                db.execSQL("ALTER TABLE $TABLE_TRACKS ADD COLUMN $COL_FILENAME TEXT")
+            } catch (e: Exception) {
+                db.execSQL("DROP TABLE IF EXISTS $TABLE_TRACKS")
+                onCreate(db)
+            }
+        } else {
+            db.execSQL("DROP TABLE IF EXISTS $TABLE_TRACKS")
+            onCreate(db)
+        }
     }
 
     fun insertTracks(dirUri: String, tracks: List<MusicFile>) {
         val db = writableDatabase
         db.beginTransaction()
         try {
-            val stmt = db.compileStatement("INSERT OR IGNORE INTO $TABLE_TRACKS ($COL_NAME,$COL_ARTIST,$COL_URI,$COL_DIR_URI) VALUES (?,?,?,?)")
+            val stmt = db.compileStatement("INSERT OR IGNORE INTO $TABLE_TRACKS ($COL_NAME,$COL_ARTIST,$COL_URI,$COL_DIR_URI,$COL_FILENAME) VALUES (?,?,?,?,?)")
                 for (t in tracks) {
                     stmt.bindString(1, t.title)
                     stmt.bindString(2, t.artist ?: "")
                     stmt.bindString(3, t.uri.toString())
                     stmt.bindString(4, dirUri)
+                    stmt.bindString(5, t.filename)
                     stmt.executeInsert()
                     stmt.clearBindings()
                 }
@@ -60,7 +72,7 @@ class MusicDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         val db = readableDatabase
         val cursor = db.query(
             TABLE_TRACKS,
-            arrayOf(COL_NAME, COL_ARTIST, COL_URI),
+            arrayOf(COL_NAME, COL_ARTIST, COL_URI, COL_FILENAME),
             "$COL_DIR_URI = ?",
             arrayOf(dirUri),
             null,
@@ -73,7 +85,16 @@ class MusicDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
                 val name = it.getString(0) ?: "Unknown"
                 val artist = it.getString(1)
                 val uriStr = it.getString(2) ?: continue
-                results.add(MusicFile(name, if (artist.isNullOrBlank()) null else artist, android.net.Uri.parse(uriStr)))
+                var filename = if (it.columnCount >= 4) it.getString(3) else null
+                if (filename.isNullOrBlank()) {
+                    try {
+                        val parsed = android.net.Uri.parse(uriStr)
+                        filename = parsed.lastPathSegment ?: name
+                    } catch (e: Exception) {
+                        filename = name
+                    }
+                }
+                results.add(MusicFile(name, if (artist.isNullOrBlank()) null else artist, android.net.Uri.parse(uriStr), filename))
             }
         }
         return results

@@ -8,7 +8,7 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.RecyclerView
 
-data class MusicFile(val title: String, val artist: String?, val uri: Uri)
+data class MusicFile(val title: String, val artist: String?, val uri: Uri, val filename: String)
 
 class MusicAdapter(
     private val items: MutableList<MusicFile>,

@@ -352,7 +352,7 @@ class MainActivity : AppCompatActivity() {
                             if (dot > 0) title = name.substring(0, dot)
                         }
 
-                out.add(MusicFile(title, artist, doc.uri))
+                out.add(MusicFile(title, artist, doc.uri, name))
             }
         }
     }
