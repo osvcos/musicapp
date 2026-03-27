@@ -19,4 +19,5 @@
     <color name="graphite">#292929</color>
     <color name="grey_olive">#999999</color>
     <color name="ic_launcher_background">#32323c</color>
+    <color name="current_song_selected">#818A9C</color>
 </resources>

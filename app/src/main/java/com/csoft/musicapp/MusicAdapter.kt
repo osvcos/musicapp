@@ -51,7 +51,7 @@ class MusicAdapter(
         holder.itemView.setOnClickListener { onItemClick(item) }
         // highlight if this is the currently playing item
         if (playingUri != null && item.uri == playingUri) {
-            val color = ContextCompat.getColor(holder.itemView.context, android.R.color.holo_blue_light)
+            val color = ContextCompat.getColor(holder.itemView.context, R.color.current_song_selected)
             holder.itemView.setBackgroundColor(color)
         } else {
             holder.itemView.setBackgroundColor(ContextCompat.getColor(holder.itemView.context, android.R.color.transparent))
