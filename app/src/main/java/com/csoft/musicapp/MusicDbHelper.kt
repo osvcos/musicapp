@@ -77,7 +77,7 @@ class MusicDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
             arrayOf(dirUri),
             null,
             null,
-            COL_NAME + " ASC"
+            "$COL_NAME COLLATE NOCASE ASC"
         )
         val results = mutableListOf<MusicFile>()
         cursor.use {
@@ -105,6 +105,27 @@ class MusicDbHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME,
         db.beginTransaction()
         try {
             db.delete(TABLE_TRACKS, "$COL_DIR_URI = ?", arrayOf(dirUri))
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+    }
+
+    fun replaceTracksForDir(dirUri: String, tracks: List<MusicFile>) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            db.delete(TABLE_TRACKS, "$COL_DIR_URI = ?", arrayOf(dirUri))
+            val stmt = db.compileStatement("INSERT OR IGNORE INTO $TABLE_TRACKS ($COL_NAME,$COL_ARTIST,$COL_URI,$COL_DIR_URI,$COL_FILENAME) VALUES (?,?,?,?,?)")
+            for (t in tracks) {
+                stmt.bindString(1, t.title)
+                stmt.bindString(2, t.artist ?: "")
+                stmt.bindString(3, t.uri.toString())
+                stmt.bindString(4, dirUri)
+                stmt.bindString(5, t.filename)
+                stmt.executeInsert()
+                stmt.clearBindings()
+            }
             db.setTransactionSuccessful()
         } finally {
             db.endTransaction()

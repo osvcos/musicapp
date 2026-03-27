@@ -12,6 +12,7 @@ import androidx.appcompat.widget.Toolbar
 import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.recyclerview.widget.RecyclerView
 import android.view.View
 import android.widget.ImageButton
@@ -161,6 +162,16 @@ class MainActivity : AppCompatActivity() {
             play(musicFile)
         }
         recyclerView.adapter = adapter
+
+        // pull-to-refresh for current directory
+        try {
+            val swipe = findViewById<SwipeRefreshLayout>(R.id.swipe_refresh)
+            swipe.setOnRefreshListener {
+                performRefresh(swipe)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "swipe refresh init failed", e)
+        }
 
         dbHelper = MusicDbHelper(this)
 
@@ -353,6 +364,49 @@ class MainActivity : AppCompatActivity() {
                         }
 
                 out.add(MusicFile(title, artist, doc.uri, name))
+            }
+        }
+    }
+
+    private fun performRefresh(swipe: SwipeRefreshLayout) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val dirUriStr = getPrefs().getString(KEY_LAST_SELECTED, null)
+            if (dirUriStr.isNullOrEmpty()) {
+                withContext(Dispatchers.Main) {
+                    swipe.isRefreshing = false
+                    Toast.makeText(this@MainActivity, "No hay directorio seleccionado", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+
+            try {
+                val doc = DocumentFile.fromTreeUri(this@MainActivity, Uri.parse(dirUriStr))
+                if (doc == null || !doc.isDirectory) {
+                    withContext(Dispatchers.Main) {
+                        swipe.isRefreshing = false
+                        Toast.makeText(this@MainActivity, "Directorio no accesible", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
+
+                val scanned = mutableListOf<MusicFile>()
+                scanDocumentFile(doc, scanned)
+                // sort alphabetically by title
+                scanned.sortWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+
+                // replace DB entries for this dir atomically
+                dbHelper.replaceTracksForDir(dirUriStr, scanned)
+
+                withContext(Dispatchers.Main) {
+                    adapter.update(scanned)
+                    swipe.isRefreshing = false
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "refresh failed", e)
+                withContext(Dispatchers.Main) {
+                    swipe.isRefreshing = false
+                    Toast.makeText(this@MainActivity, "Error al refrescar directorio", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
