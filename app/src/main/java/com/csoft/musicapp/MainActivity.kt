@@ -129,6 +129,7 @@ class MainActivity : AppCompatActivity() {
         private const val TAG = "MainActivity"
         private const val PREFS_NAME = "musicapp_prefs"
         private const val KEY_SAVED_DIRS = "saved_dirs"
+        private const val KEY_MENU_ID_COUNTER = "menu_id_counter"
         private const val KEY_LAST_SELECTED = "last_selected_dir"
         private const val DIR_MENU_GROUP = 100
         private const val HINT_ITEM_ID = 9999
@@ -234,14 +235,41 @@ class MainActivity : AppCompatActivity() {
                 val pickedDir = DocumentFile.fromTreeUri(this, uri)
                 if (pickedDir != null && pickedDir.isDirectory) {
                     // add to drawer and persist
-                    val displayName = pickedDir.name ?: uri.lastPathSegment ?: "Directorio"
-                    addDirectoryToSaved(displayName, uri.toString())
-                    addDirectoryToDrawer(navView, displayName, uri)
+                    val rawName = pickedDir.name ?: uri.lastPathSegment ?: "Directorio"
+                    // build list of existing saved names to compute a unique display name
+                    val prefs = getPrefs()
+                    val existingNames = mutableListOf<String>()
+                    val jsonSaved = prefs.getString(KEY_SAVED_DIRS, null)
+                    if (!jsonSaved.isNullOrEmpty()) {
+                        try {
+                            val arr = JSONArray(jsonSaved)
+                            for (i in 0 until arr.length()) {
+                                val obj = arr.optJSONObject(i)
+                                val n = obj?.optString("name")
+                                if (!n.isNullOrEmpty()) existingNames.add(n)
+                            }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "malformed saved dirs JSON (when computing unique name)", e)
+                        }
+                    }
+
+                    val displayName = nextDirectoryName(rawName, existingNames)
+                    val assignedId = addDirectoryToSaved(displayName, uri.toString())
+                    Log.d(TAG, "added directory: name=$displayName uri=${uri.toString()} assignedId=$assignedId")
+                    // if menu already contains this id, avoid re-adding (prevents renaming existing item)
+                    val menu = navView.menu
+                    val existingItem = try { menu.findItem(assignedId) } catch (e: Exception) { null }
+                    if (existingItem != null) {
+                        // mark existing item as selected
+                        try { navView.setCheckedItem(assignedId) } catch (e: Exception) { /* ignore */ }
+                    } else {
+                        addDirectoryToDrawer(navView, displayName, uri, assignedId)
+                    }
                     // hide empty hint and save as last selected
                     emptyHint.visibility = View.GONE
                     getPrefs().edit().putString(KEY_LAST_SELECTED, uri.toString()).apply()
                     try {
-                        navView.setCheckedItem(uri.hashCode())
+                        navView.setCheckedItem(assignedId)
                     } catch (e: Exception) {
                         // ignore
                     }
@@ -271,6 +299,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         navView.setNavigationItemSelectedListener { menuItem ->
+            Log.d(TAG, "navView item clicked: id=${menuItem.itemId} data=${menuItem.intent?.data}")
             when (menuItem.itemId) {
                 R.id.action_add_directory -> {
                     openDocumentTreeLauncher.launch(null)
@@ -413,6 +442,21 @@ class MainActivity : AppCompatActivity() {
 
     private fun getPrefs(): SharedPreferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
 
+    private fun nextDirectoryName(base: String, existingNames: Collection<String>): String {
+        if (!existingNames.contains(base)) return base
+        val regex = Regex("^" + Regex.escape(base) + "(?: (\\d+))?$")
+        var maxNum = 0
+        for (name in existingNames) {
+            val m = regex.matchEntire(name) ?: continue
+            val numStr = m.groupValues.getOrNull(1)
+            val num = numStr?.toIntOrNull()
+            if (num != null) {
+                if (num > maxNum) maxNum = num
+            }
+        }
+        return if (maxNum == 0) "$base 2" else "$base ${maxNum + 1}"
+    }
+
     private fun loadSavedDirectories(navView: NavigationView) {
         // show loading overlay while we prepare the drawer
         lifecycleScope.launch(Dispatchers.Main) {
@@ -548,33 +592,45 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun addDirectoryToSaved(name: String, uriStr: String) {
+    private fun addDirectoryToSaved(name: String, uriStr: String): Int {
         val prefs = getPrefs()
         val json = prefs.getString(KEY_SAVED_DIRS, null)
         val arr = if (json != null) JSONArray(json) else JSONArray()
         // avoid duplicates
         for (i in 0 until arr.length()) {
             val obj = arr.optJSONObject(i)
-            if (obj != null && obj.optString("uri") == uriStr) return
+            if (obj != null && obj.optString("uri") == uriStr) {
+                // return existing stored id if present, otherwise fallback to hashCode
+                return obj.optInt("id", uriStr.hashCode())
+            }
         }
         val obj = JSONObject()
         obj.put("name", name)
         obj.put("uri", uriStr)
+        // assign a stable unique id for menu item to avoid hashCode collisions
+        val nextId = prefs.getInt(KEY_MENU_ID_COUNTER, 1)
+        obj.put("id", nextId)
+        // update counter and array in a single editor to avoid races
+        val editor = prefs.edit()
+        editor.putInt(KEY_MENU_ID_COUNTER, nextId + 1)
         arr.put(obj)
-        prefs.edit().putString(KEY_SAVED_DIRS, arr.toString()).apply()
+        editor.putString(KEY_SAVED_DIRS, arr.toString())
+        editor.apply()
+        return nextId
     }
 
-    private fun addDirectoryToDrawer(navView: NavigationView, name: String, uri: Uri) {
+    private fun addDirectoryToDrawer(navView: NavigationView, name: String, uri: Uri, menuId: Int? = null) {
         val menu = navView.menu
-        addDirectoryMenuItem(menu, name, uri)
+        addDirectoryMenuItem(menu, name, uri, menuId)
         // ensure group is checkable when adding dynamically
         menu.setGroupCheckable(DIR_MENU_GROUP, true, true)
     }
 
-    private fun addDirectoryMenuItem(menu: Menu, name: String, uri: Uri) {
+    private fun addDirectoryMenuItem(menu: Menu, name: String, uri: Uri, itemIdOverride: Int? = null) {
         // add under group so we can clear later if needed
-        val itemId = uri.hashCode()
+        val itemId = itemIdOverride ?: getMenuItemIdForUri(uri.toString())
         val item = menu.add(DIR_MENU_GROUP, itemId, Menu.NONE, "")
+        Log.d(TAG, "addDirectoryMenuItem: itemId=$itemId uri=${uri.toString()} name=$name")
         val intent = Intent()
         intent.data = uri
         item.intent = intent
@@ -719,6 +775,28 @@ class MainActivity : AppCompatActivity() {
                 navView.setCheckedItem(selected.itemId)
             }
         }
+    }
+
+    private fun getMenuItemIdForUri(uriStr: String): Int {
+        try {
+            val prefs = getPrefs()
+            val json = prefs.getString(KEY_SAVED_DIRS, null)
+            if (!json.isNullOrEmpty()) {
+                val arr = JSONArray(json)
+                for (i in 0 until arr.length()) {
+                    val obj = arr.optJSONObject(i)
+                    if (obj != null && obj.optString("uri") == uriStr) {
+                        val id = obj.optInt("id", Int.MIN_VALUE)
+                        if (id != Int.MIN_VALUE) return id
+                        break
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "getMenuItemIdForUri failed", e)
+        }
+        // fallback to hashCode if no stored id available
+        return uriStr.hashCode()
     }
 
     private fun play(musicFile: MusicFile) {
