@@ -630,24 +630,45 @@ class MainActivity : AppCompatActivity() {
 
             btn.setOnClickListener {
                 val dirUriStr = uri.toString()
-                // remove from saved prefs
-                    try {
-                        val prefs = getPrefs()
-                        val json = prefs.getString(KEY_SAVED_DIRS, null)
-                        if (!json.isNullOrEmpty()) {
-                            val arr = JSONArray(json)
-                            val newArr = JSONArray()
-                            for (i in 0 until arr.length()) {
-                                val obj = arr.optJSONObject(i)
-                                if (obj != null && obj.optString("uri") != dirUriStr) {
-                                    newArr.put(obj)
-                                }
+
+                // Si la ruta actual de reproducción es de este directorio, limpiar cola.
+                try {
+                    val currentUri = playerService?.getCurrentMediaUri()
+                    val isDirectoryCurrentlyPlaying = !currentUri.isNullOrEmpty() && currentUri.startsWith(dirUriStr)
+                    val isMenuItemChecked = (navView.checkedItem?.itemId == itemId)
+                    if (isDirectoryCurrentlyPlaying || isMenuItemChecked) {
+                        if (serviceBound && playerService != null) {
+                            playerService?.clearQueue()
+                        } else {
+                            Intent(this@MainActivity, MusicPlayerService::class.java).also {
+                                it.action = MusicPlayerService.ACTION_CLEAR_QUEUE
+                                startService(it)
                             }
-                            prefs.edit().putString(KEY_SAVED_DIRS, newArr.toString()).apply()
                         }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "failed removing saved dir from prefs: $dirUriStr", e)
+                        adapter.setPlayingUri(null)
                     }
+                } catch (e: Exception) {
+                    Log.w(TAG, "failed clearing queue for removed dir $dirUriStr", e)
+                }
+
+                // remove from saved prefs
+                try {
+                    val prefs = getPrefs()
+                    val json = prefs.getString(KEY_SAVED_DIRS, null)
+                    if (!json.isNullOrEmpty()) {
+                        val arr = JSONArray(json)
+                        val newArr = JSONArray()
+                        for (i in 0 until arr.length()) {
+                            val obj = arr.optJSONObject(i)
+                            if (obj != null && obj.optString("uri") != dirUriStr) {
+                                newArr.put(obj)
+                            }
+                        }
+                        prefs.edit().putString(KEY_SAVED_DIRS, newArr.toString()).apply()
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "failed removing saved dir from prefs: $dirUriStr", e)
+                }
 
                 // delete tracks in DB off UI thread
                 lifecycleScope.launch(Dispatchers.IO) {

@@ -44,6 +44,7 @@ class MusicPlayerService : Service() {
         const val ACTION_PLAY_QUEUE = "com.csoft.musicapp.action.PLAY_QUEUE"
         const val ACTION_PLAY_PAUSE = "com.csoft.musicapp.action.PLAY_PAUSE"
         const val ACTION_PAUSE = "com.csoft.musicapp.action.PAUSE"
+        const val ACTION_CLEAR_QUEUE = "com.csoft.musicapp.action.CLEAR_QUEUE"
         const val ACTION_SKIP_NEXT = "com.csoft.musicapp.action.SKIP_NEXT"
         const val ACTION_SKIP_PREV = "com.csoft.musicapp.action.SKIP_PREV"
         const val ACTION_TOGGLE_SHUFFLE = "com.csoft.musicapp.action.TOGGLE_SHUFFLE"
@@ -174,6 +175,7 @@ class MusicPlayerService : Service() {
                     if (player.isPlaying) player.pause() else player.play()
                 }
                 ACTION_PAUSE -> player.pause()
+                ACTION_CLEAR_QUEUE -> clearQueue()
                 ACTION_SKIP_NEXT -> player.seekToNextMediaItem()
                 ACTION_SKIP_PREV -> player.seekToPreviousMediaItem()
                 ACTION_TOGGLE_SHUFFLE -> player.shuffleModeEnabled = !player.shuffleModeEnabled
@@ -203,6 +205,16 @@ class MusicPlayerService : Service() {
         player.pause()
         try {
             stopForeground(false)
+        } catch (e: Exception) {
+            // ignore
+        }
+    }
+
+    fun clearQueue() {
+        player.stop()
+        player.clearMediaItems()
+        try {
+            stopForeground(true)
         } catch (e: Exception) {
             // ignore
         }
