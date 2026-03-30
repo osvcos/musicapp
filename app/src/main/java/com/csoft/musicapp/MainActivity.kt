@@ -74,20 +74,13 @@ class MainActivity : AppCompatActivity() {
 
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         lifecycleScope.launch(Dispatchers.Main) {
-                            if (isPlaying) btnPlayPause.setImageResource(R.drawable.pause_circle_24px)
-                            else btnPlayPause.setImageResource(R.drawable.play_circle_24px)
+                            setPlayPauseIcon(isPlaying)
                         }
                     }
 
                     override fun onShuffleModeChanged(shuffleEnabled: Boolean) {
                         lifecycleScope.launch(Dispatchers.Main) {
-                            if (shuffleEnabled) {
-                                btnShuffle.setImageResource(R.drawable.shuffle_on_24px)
-                                btnShuffle.alpha = 1f
-                            } else {
-                                btnShuffle.setImageResource(R.drawable.shuffle_24px)
-                                btnShuffle.alpha = 0.6f
-                            }
+                            setShuffleIcon(shuffleEnabled)
                         }
                     }
                 }
@@ -97,23 +90,17 @@ class MainActivity : AppCompatActivity() {
                 try {
                     val svc = playerService
                     if (svc != null) {
-                        if (svc.isPlaying()) btnPlayPause.setImageResource(R.drawable.pause_circle_24px)
-                        else btnPlayPause.setImageResource(R.drawable.play_circle_24px)
-                        if (svc.isShuffleEnabled()) {
-                            btnShuffle.setImageResource(R.drawable.shuffle_on_24px)
-                            btnShuffle.alpha = 1f
-                        } else {
-                            btnShuffle.setImageResource(R.drawable.shuffle_24px)
-                            btnShuffle.alpha = 0.6f
-                        }
+                        setPlayPauseIcon(svc.isPlaying())
+                        setShuffleIcon(svc.isShuffleEnabled())
                         val cur = svc.getCurrentMediaUri()
                         if (cur is String && cur.isNotEmpty()) adapter.setPlayingUri(Uri.parse(cur))
                     } else {
-                        btnPlayPause.setImageResource(R.drawable.play_circle_24px)
-                        btnShuffle.setImageResource(R.drawable.shuffle_24px)
-                        btnShuffle.alpha = 0.6f
+                        setPlayPauseIcon(false)
+                        setShuffleIcon(false)
                     }
-                    } catch (e: Exception) { Log.w(TAG, "sync initial UI state failed", e) }
+                } catch (e: Exception) {
+                    Log.w(TAG, "sync initial UI state failed", e)
+                }
             }
         }
 
@@ -206,9 +193,8 @@ class MainActivity : AppCompatActivity() {
         }
 
         // initial UI state
-        btnShuffle.alpha = 0.6f
-        btnPlayPause.setImageResource(R.drawable.play_circle_24px)
-
+        setPlayPauseIcon(false)
+        setShuffleIcon(false)
 
         // NOTE: Playback updates (notification, media session) are handled in MusicPlayerService.
 
@@ -318,20 +304,8 @@ class MainActivity : AppCompatActivity() {
                         lifecycleScope.launch(Dispatchers.IO) {
                             val saved = dbHelper.getTracksForDir(dirUriStr)
                             withContext(Dispatchers.Main) {
-                                    if (saved.isNotEmpty()) {
-                                        adapter.update(saved)
-                                        // hide empty hint when we have tracks
-                                        emptyHint.visibility = View.GONE
-                                        // persist last selected dir and mark item checked
-                                        getPrefs().edit().putString(KEY_LAST_SELECTED, dirUriStr).apply()
-                                        menuItem.isChecked = true
-                                        navView.setCheckedItem(menuItem.itemId)
-                                        // ensure overlay stays until list drawn
-                                        recyclerView.post { try { loadingOverlay.visibility = android.view.View.GONE } catch (e: Exception) { Log.w(TAG, "failed hiding loading overlay", e) } }
-                                    } else {
-                                        Toast.makeText(this@MainActivity, "No hay pistas guardadas para este directorio", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
+                                renderDirectoryTracks(saved, dirUriStr, menuItem)
+                            }
                         }
                     }
                 }
@@ -341,16 +315,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun renderDirectoryTracks(saved: List<MusicFile>, dirUriStr: String, menuItem: MenuItem? = null) {
+        if (saved.isNotEmpty()) {
+            adapter.update(saved)
+            emptyHint.visibility = View.GONE
+            getPrefs().edit().putString(KEY_LAST_SELECTED, dirUriStr).apply()
+            menuItem?.let {
+                it.isChecked = true
+                navView.setCheckedItem(it.itemId)
+            }
+            recyclerView.post { try { loadingOverlay.visibility = android.view.View.GONE } catch (e: Exception) { Log.w(TAG, "failed hiding loading overlay", e) } }
+        } else {
+            Toast.makeText(this@MainActivity, "No hay pistas guardadas para este directorio", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     private fun loadTracksForDir(dirUriStr: String) {
         lifecycleScope.launch(Dispatchers.IO) {
             val saved = dbHelper.getTracksForDir(dirUriStr)
             withContext(Dispatchers.Main) {
-                if (saved.isNotEmpty()) {
-                    adapter.update(saved)
-                    recyclerView.post { try { loadingOverlay.visibility = android.view.View.GONE } catch (e: Exception) { Log.w(TAG, "failed hiding loading overlay", e) } }
-                } else {
-                    Toast.makeText(this@MainActivity, "No hay pistas guardadas para este directorio", Toast.LENGTH_SHORT).show()
-                }
+                renderDirectoryTracks(saved, dirUriStr)
             }
         }
     }
@@ -464,11 +448,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadSavedDirectories(navView: NavigationView) {
         // show loading overlay while we prepare the drawer
-        lifecycleScope.launch(Dispatchers.Main) {
-            try { loadingOverlay.bringToFront(); loadingOverlay.requestLayout(); loadingOverlay.invalidate() } catch (e: Exception) { Log.w(TAG, "bringToFront failed", e) }
-            loadingOverlay.visibility = android.view.View.VISIBLE
-            Log.d(TAG, "showing loading overlay (loadSavedDirectories)")
-        }
+        showLoadingOverlay()
 
         val prefs = getPrefs()
         val json = prefs.getString(KEY_SAVED_DIRS, null)
@@ -480,7 +460,7 @@ class MainActivity : AppCompatActivity() {
             menu.setGroupCheckable(DIR_MENU_GROUP, true, true)
             emptyHint.visibility = View.VISIBLE
             // nothing to load -> hide overlay
-            lifecycleScope.launch(Dispatchers.Main) { loadingOverlay.visibility = android.view.View.GONE }
+            hideLoadingOverlay()
             return
         }
 
@@ -527,11 +507,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun proceedAfterPermission() {
-        lifecycleScope.launch(Dispatchers.Main) {
-            Log.d(TAG, "showing loading overlay (proceedAfterPermission)")
-            try { loadingOverlay.bringToFront(); loadingOverlay.requestLayout(); loadingOverlay.invalidate() } catch (e: Exception) { Log.w(TAG, "bringToFront failed", e) }
-            loadingOverlay.visibility = android.view.View.VISIBLE
-        }
+        showLoadingOverlay()
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
@@ -590,9 +566,7 @@ class MainActivity : AppCompatActivity() {
                 }
             } finally {
                 // ensure overlay hidden in case of unexpected errors
-                try {
-                    withContext(Dispatchers.Main) { loadingOverlay.visibility = android.view.View.GONE }
-                } catch (e: Exception) { Log.w(TAG, "failed hiding loading overlay", e) }
+                hideLoadingOverlay()
             }
         }
     }
@@ -802,6 +776,41 @@ class MainActivity : AppCompatActivity() {
         }
         // fallback to hashCode if no stored id available
         return uriStr.hashCode()
+    }
+
+    private fun setPlayPauseIcon(isPlaying: Boolean) {
+        btnPlayPause.setImageResource(if (isPlaying) R.drawable.pause_circle_24px else R.drawable.play_circle_24px)
+    }
+
+    private fun setShuffleIcon(shuffleEnabled: Boolean) {
+        if (shuffleEnabled) {
+            btnShuffle.setImageResource(R.drawable.shuffle_on_24px)
+            btnShuffle.alpha = 1f
+        } else {
+            btnShuffle.setImageResource(R.drawable.shuffle_24px)
+            btnShuffle.alpha = 0.6f
+        }
+    }
+
+    private fun showLoadingOverlay() {
+        lifecycleScope.launch(Dispatchers.Main) {
+            try {
+                loadingOverlay.bringToFront(); loadingOverlay.requestLayout(); loadingOverlay.invalidate()
+            } catch (e: Exception) {
+                Log.w(TAG, "bringToFront failed", e)
+            }
+            loadingOverlay.visibility = View.VISIBLE
+        }
+    }
+
+    private fun hideLoadingOverlay() {
+        lifecycleScope.launch(Dispatchers.Main) {
+            try {
+                loadingOverlay.visibility = View.GONE
+            } catch (e: Exception) {
+                Log.w(TAG, "failed hiding loading overlay", e)
+            }
+        }
     }
 
     private fun play(musicFile: MusicFile) {
