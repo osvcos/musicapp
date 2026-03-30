@@ -296,6 +296,20 @@ class MainActivity : AppCompatActivity() {
                     openDocumentTreeLauncher.launch(null)
                 }
                 else -> {
+                    // Clear playback queue on directory switch
+                    try {
+                        if (serviceBound && playerService != null) {
+                            playerService?.clearQueue()
+                        } else {
+                            Intent(this, MusicPlayerService::class.java).also {
+                                it.action = MusicPlayerService.ACTION_CLEAR_QUEUE
+                                startService(it)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "failed clearing queue on directory switch", e)
+                    }
+
                     // Load tracks for this directory from DB (do not rescan)
                     val intent = menuItem.intent
                     val dataUri = intent?.data
@@ -305,6 +319,7 @@ class MainActivity : AppCompatActivity() {
                             val saved = dbHelper.getTracksForDir(dirUriStr)
                             withContext(Dispatchers.Main) {
                                 renderDirectoryTracks(saved, dirUriStr, menuItem)
+                                adapter.setPlayingUri(null)
                             }
                         }
                     }
