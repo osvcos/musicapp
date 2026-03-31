@@ -118,6 +118,7 @@ class MainActivity : AppCompatActivity() {
         private const val KEY_SAVED_DIRS = "saved_dirs"
         private const val KEY_MENU_ID_COUNTER = "menu_id_counter"
         private const val KEY_LAST_SELECTED = "last_selected_dir"
+        private const val KEY_SHUFFLE_FOR_DIR_PREFIX = "shuffle_for_dir_"
         private const val DIR_MENU_GROUP = 100
         private const val HINT_ITEM_ID = 9999
     }
@@ -188,8 +189,12 @@ class MainActivity : AppCompatActivity() {
             Intent(this, MusicPlayerService::class.java).also { it.action = MusicPlayerService.ACTION_SKIP_NEXT; startService(it) }
         }
         btnShuffle.setOnClickListener {
-            Intent(this, MusicPlayerService::class.java).also { it.action = MusicPlayerService.ACTION_TOGGLE_SHUFFLE; startService(it) }
-            btnShuffle.alpha = if (btnShuffle.alpha < 1f) 1f else 0.6f
+            val lastDir = getPrefs().getString(KEY_LAST_SELECTED, null)
+            val currentShuffle = if (lastDir != null) getShuffleStateForDir(lastDir) else false
+            val newShuffle = !currentShuffle
+
+            applyShuffleStateToService(newShuffle)
+            lastDir?.let { saveShuffleStateForDir(it, newShuffle) }
         }
 
         // initial UI state
@@ -315,6 +320,13 @@ class MainActivity : AppCompatActivity() {
                     val dataUri = intent?.data
                     if (dataUri != null) {
                         val dirUriStr = dataUri.toString()
+                        val shuffleState = getShuffleStateForDir(dirUriStr)
+                        try {
+                            applyShuffleStateToService(shuffleState)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "failed applying shuffle state on directory switch", e)
+                        }
+
                         lifecycleScope.launch(Dispatchers.IO) {
                             val saved = dbHelper.getTracksForDir(dirUriStr)
                             withContext(Dispatchers.Main) {
@@ -446,6 +458,31 @@ class MainActivity : AppCompatActivity() {
 
     private fun getPrefs(): SharedPreferences = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
 
+    private fun getShuffleKeyForDir(dirUri: String): String = KEY_SHUFFLE_FOR_DIR_PREFIX + dirUri
+
+    private fun getShuffleStateForDir(dirUri: String): Boolean = getPrefs().getBoolean(getShuffleKeyForDir(dirUri), false)
+
+    private fun saveShuffleStateForDir(dirUri: String, enabled: Boolean) {
+        getPrefs().edit().putBoolean(getShuffleKeyForDir(dirUri), enabled).apply()
+    }
+
+    private fun clearShuffleStateForDir(dirUri: String) {
+        getPrefs().edit().remove(getShuffleKeyForDir(dirUri)).apply()
+    }
+
+    private fun applyShuffleStateToService(shuffleState: Boolean) {
+        if (serviceBound && playerService != null) {
+            playerService?.setShuffleEnabled(shuffleState)
+        } else {
+            Intent(this, MusicPlayerService::class.java).also {
+                it.action = MusicPlayerService.ACTION_SET_SHUFFLE
+                it.putExtra(MusicPlayerService.EXTRA_SHUFFLE_ENABLED, shuffleState)
+                startService(it)
+            }
+        }
+        setShuffleIcon(shuffleState)
+    }
+
     private fun nextDirectoryName(base: String, existingNames: Collection<String>): String {
         if (!existingNames.contains(base)) return base
         val regex = Regex("^" + Regex.escape(base) + "(?: (\\d+))?$")
@@ -576,6 +613,15 @@ class MainActivity : AppCompatActivity() {
                         loadSavedDirectories(navView)
                     }
 
+                    // Ensure shuffle state is restored for last selected directory on startup
+                    if (!last.isNullOrEmpty()) {
+                        try {
+                            applyShuffleStateToService(getShuffleStateForDir(last))
+                        } catch (e: Exception) {
+                            Log.w(TAG, "failed applying saved shuffle state after permission", e)
+                        }
+                    }
+
                     // If adapter already has items hide overlay after layout, otherwise loaders (loadTracksForDir)
                     recyclerView.post { try { if (recyclerView.childCount > 0) { loadingOverlay.visibility = android.view.View.GONE; Log.d(TAG, "loading overlay hidden (proceedAfterPermission immediate)") } } catch (e: Exception) { Log.w(TAG, "failed hiding loading overlay", e) } }
                 }
@@ -681,6 +727,7 @@ class MainActivity : AppCompatActivity() {
                         }
                         prefs.edit().putString(KEY_SAVED_DIRS, newArr.toString()).apply()
                     }
+                    clearShuffleStateForDir(dirUriStr)
                 } catch (e: Exception) {
                     Log.w(TAG, "failed removing saved dir from prefs: $dirUriStr", e)
                 }
@@ -785,6 +832,13 @@ class MainActivity : AppCompatActivity() {
         if (selected != null) {
             val dirUri = selected.intent?.data?.toString()
             if (!dirUri.isNullOrEmpty()) {
+                val shuffleState = getShuffleStateForDir(dirUri)
+                try {
+                    applyShuffleStateToService(shuffleState)
+                } catch (e: Exception) {
+                    Log.w(TAG, "failed applying shuffle state for selected dir", e)
+                }
+
                 loadTracksForDir(dirUri)
                 selected.isChecked = true
                 navView.setCheckedItem(selected.itemId)

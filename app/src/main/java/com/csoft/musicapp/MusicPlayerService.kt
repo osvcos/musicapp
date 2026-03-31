@@ -48,6 +48,8 @@ class MusicPlayerService : Service() {
         const val ACTION_SKIP_NEXT = "com.csoft.musicapp.action.SKIP_NEXT"
         const val ACTION_SKIP_PREV = "com.csoft.musicapp.action.SKIP_PREV"
         const val ACTION_TOGGLE_SHUFFLE = "com.csoft.musicapp.action.TOGGLE_SHUFFLE"
+        const val ACTION_SET_SHUFFLE = "com.csoft.musicapp.action.SET_SHUFFLE"
+        const val EXTRA_SHUFFLE_ENABLED = "extra_shuffle_enabled"
         const val EXTRA_URIS = "extra_uris"
         const val EXTRA_TITLES = "extra_titles"
         const val EXTRA_ARTISTS = "extra_artists"
@@ -179,6 +181,10 @@ class MusicPlayerService : Service() {
                 ACTION_SKIP_NEXT -> player.seekToNextMediaItem()
                 ACTION_SKIP_PREV -> player.seekToPreviousMediaItem()
                 ACTION_TOGGLE_SHUFFLE -> player.shuffleModeEnabled = !player.shuffleModeEnabled
+                ACTION_SET_SHUFFLE -> {
+                    val shuffleEnable = intent.getBooleanExtra(EXTRA_SHUFFLE_ENABLED, false)
+                    player.shuffleModeEnabled = shuffleEnable
+                }
             }
         }
         return START_STICKY
@@ -231,6 +237,10 @@ class MusicPlayerService : Service() {
     fun isPlaying(): Boolean = player.isPlaying
 
     fun isShuffleEnabled(): Boolean = player.shuffleModeEnabled
+
+    fun setShuffleEnabled(enabled: Boolean) {
+        player.shuffleModeEnabled = enabled
+    }
 
     fun getCurrentMediaUri(): String? {
         return player.currentMediaItem?.localConfiguration?.uri?.toString()
