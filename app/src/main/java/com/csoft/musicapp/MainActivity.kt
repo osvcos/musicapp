@@ -35,6 +35,12 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.ViewGroup
 import android.widget.TextView
+import com.google.android.gms.ads.AdRequest
+import com.google.android.gms.ads.FullScreenContentCallback
+import com.google.android.gms.ads.LoadAdError
+import com.google.android.gms.ads.MobileAds
+import com.google.android.gms.ads.interstitial.InterstitialAd
+import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 
 class MainActivity : AppCompatActivity() {
 
@@ -111,6 +117,9 @@ class MainActivity : AppCompatActivity() {
     }
     private lateinit var dbHelper: MusicDbHelper
     private lateinit var emptyHint: View
+
+    private var interstitialAd: InterstitialAd? = null
+    private val interstitialAdUnitId = "ca-app-pub-3940256099942544/1033173712" // test ad unit
 
     companion object {
         private const val TAG = "MainActivity"
@@ -200,6 +209,9 @@ class MainActivity : AppCompatActivity() {
         // initial UI state
         setPlayPauseIcon(false)
         setShuffleIcon(false)
+
+        // Initialize Google Mobile Ads interstitial
+        initializeInterstitialAds()
 
         // NOTE: Playback updates (notification, media session) are handled in MusicPlayerService.
 
@@ -301,44 +313,121 @@ class MainActivity : AppCompatActivity() {
                     openDocumentTreeLauncher.launch(null)
                 }
                 else -> {
-                    // Clear playback queue on directory switch
-                    try {
-                        if (serviceBound && playerService != null) {
-                            playerService?.clearQueue()
-                        } else {
-                            Intent(this, MusicPlayerService::class.java).also {
-                                it.action = MusicPlayerService.ACTION_CLEAR_QUEUE
-                                startService(it)
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "failed clearing queue on directory switch", e)
-                    }
-
-                    // Load tracks for this directory from DB (do not rescan)
-                    val intent = menuItem.intent
-                    val dataUri = intent?.data
-                    if (dataUri != null) {
-                        val dirUriStr = dataUri.toString()
-                        val shuffleState = getShuffleStateForDir(dirUriStr)
+                    val loadDirectoryAction = {
+                        // Clear playback queue on directory switch
                         try {
-                            applyShuffleStateToService(shuffleState)
+                            if (serviceBound && playerService != null) {
+                                playerService?.clearQueue()
+                            } else {
+                                Intent(this, MusicPlayerService::class.java).also {
+                                    it.action = MusicPlayerService.ACTION_CLEAR_QUEUE
+                                    startService(it)
+                                }
+                            }
                         } catch (e: Exception) {
-                            Log.w(TAG, "failed applying shuffle state on directory switch", e)
+                            Log.w(TAG, "failed clearing queue on directory switch", e)
                         }
 
-                        lifecycleScope.launch(Dispatchers.IO) {
-                            val saved = dbHelper.getTracksForDir(dirUriStr)
-                            withContext(Dispatchers.Main) {
-                                renderDirectoryTracks(saved, dirUriStr, menuItem)
-                                adapter.setPlayingUri(null)
+                        // Load tracks for this directory from DB (do not rescan)
+                        val intent = menuItem.intent
+                        val dataUri = intent?.data
+                        if (dataUri != null) {
+                            val dirUriStr = dataUri.toString()
+                            val shuffleState = getShuffleStateForDir(dirUriStr)
+                            try {
+                                applyShuffleStateToService(shuffleState)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "failed applying shuffle state on directory switch", e)
+                            }
+
+                            lifecycleScope.launch(Dispatchers.IO) {
+                                val saved = dbHelper.getTracksForDir(dirUriStr)
+                                withContext(Dispatchers.Main) {
+                                    renderDirectoryTracks(saved, dirUriStr, menuItem)
+                                    adapter.setPlayingUri(null)
+                                }
                             }
                         }
                     }
+
+                    showInterstitialIfAvailable(loadDirectoryAction)
                 }
             }
             drawerLayout.closeDrawer(GravityCompat.START)
             true
+        }
+    }
+
+    private fun initializeInterstitialAds() {
+        MobileAds.initialize(this) {
+            Log.d(TAG, "MobileAds initialized")
+        }
+        loadInterstitialAd()
+    }
+
+    private fun loadInterstitialAd() {
+        val adRequest = AdRequest.Builder().build()
+        InterstitialAd.load(
+            this,
+            interstitialAdUnitId,
+            adRequest,
+            object : InterstitialAdLoadCallback() {
+                override fun onAdLoaded(ad: InterstitialAd) {
+                    Log.d(TAG, "Interstitial ad loaded")
+                    interstitialAd = ad
+                    interstitialAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
+                        override fun onAdDismissedFullScreenContent() {
+                            Log.d(TAG, "Interstitial ad dismissed")
+                            interstitialAd = null
+                            loadInterstitialAd()
+                        }
+
+                        override fun onAdFailedToShowFullScreenContent(adError: com.google.android.gms.ads.AdError) {
+                            Log.w(TAG, "Interstitial ad failed to show: ${adError.message}")
+                            interstitialAd = null
+                            loadInterstitialAd()
+                        }
+
+                        override fun onAdShowedFullScreenContent() {
+                            Log.d(TAG, "Interstitial ad showed")
+                        }
+                    }
+                }
+
+                override fun onAdFailedToLoad(loadAdError: LoadAdError) {
+                    Log.w(TAG, "Interstitial ad failed to load: ${loadAdError.message}")
+                    interstitialAd = null
+                }
+            }
+        )
+    }
+
+    private fun showInterstitialIfAvailable(onComplete: () -> Unit) {
+        val ad = interstitialAd
+        onComplete()
+        if (ad != null) {
+            ad.fullScreenContentCallback = object : FullScreenContentCallback() {
+                override fun onAdDismissedFullScreenContent() {
+                    Log.d(TAG, "Interstitial ad dismissed via showInterstitialIfAvailable")
+                    interstitialAd = null
+                    loadInterstitialAd()
+                }
+
+                override fun onAdFailedToShowFullScreenContent(adError: com.google.android.gms.ads.AdError) {
+                    Log.w(TAG, "Interstitial ad failed to show: ${adError.message}")
+                    interstitialAd = null
+                    loadInterstitialAd()
+                }
+
+                override fun onAdShowedFullScreenContent() {
+                    Log.d(TAG, "Interstitial ad showed")
+                }
+            }
+            ad.show(this)
+        } else {
+            Log.d(TAG, "Interstitial ad not ready, continue immediately")
+            onComplete()
+            loadInterstitialAd()
         }
     }
 
