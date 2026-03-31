@@ -658,7 +658,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun proceedAfterPermission() {
         showLoadingOverlay()
-        initializeInterstitialAds()
+
+        if(showAds) {
+            initializeInterstitialAds()
+        }
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
