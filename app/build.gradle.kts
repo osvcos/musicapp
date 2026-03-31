@@ -10,6 +10,10 @@ android {
         }
     }
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         applicationId = "com.csoft.musicapp"
         minSdk = 28
@@ -28,6 +32,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            buildConfigField("Boolean", "RELEASE", "true")
+        }
+        debug {
+            buildConfigField("Boolean", "RELEASE", "false")
         }
     }
     compileOptions {

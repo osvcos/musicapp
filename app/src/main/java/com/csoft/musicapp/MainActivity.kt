@@ -44,6 +44,7 @@ import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 
 class MainActivity : AppCompatActivity() {
 
+    private val showAds = true
     private lateinit var drawerLayout: DrawerLayout
     private lateinit var recyclerView: RecyclerView
     private lateinit var adapter: MusicAdapter
@@ -119,7 +120,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var emptyHint: View
 
     private var interstitialAd: InterstitialAd? = null
-    private val interstitialAdUnitId = "ca-app-pub-3940256099942544/1033173712" // test ad unit
+    private var interstitialAdUnitId = "ca-app-pub-3940256099942544/1033173712" // test ad unit
 
     companion object {
         private const val TAG = "MainActivity"
@@ -211,7 +212,7 @@ class MainActivity : AppCompatActivity() {
         setShuffleIcon(false)
 
         // Initialize Google Mobile Ads interstitial
-        initializeInterstitialAds()
+        // initializeInterstitialAds()
 
         // NOTE: Playback updates (notification, media session) are handled in MusicPlayerService.
 
@@ -350,7 +351,11 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
 
-                    showInterstitialIfAvailable(loadDirectoryAction)
+                    if(showAds) {
+                        showInterstitialIfAvailable(loadDirectoryAction)
+                    } else {
+                        loadDirectoryAction()
+                    }
                 }
             }
             drawerLayout.closeDrawer(GravityCompat.START)
@@ -367,6 +372,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadInterstitialAd() {
         val adRequest = AdRequest.Builder().build()
+
+        if(BuildConfig.RELEASE) {
+            interstitialAdUnitId = "ca-app-pub-4319401541466459~8842115377"
+        }
+
         InterstitialAd.load(
             this,
             interstitialAdUnitId,
@@ -375,7 +385,7 @@ class MainActivity : AppCompatActivity() {
                 override fun onAdLoaded(ad: InterstitialAd) {
                     Log.d(TAG, "Interstitial ad loaded")
                     interstitialAd = ad
-                    interstitialAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
+                    /* interstitialAd?.fullScreenContentCallback = object : FullScreenContentCallback() {
                         override fun onAdDismissedFullScreenContent() {
                             Log.d(TAG, "Interstitial ad dismissed")
                             interstitialAd = null
@@ -391,7 +401,7 @@ class MainActivity : AppCompatActivity() {
                         override fun onAdShowedFullScreenContent() {
                             Log.d(TAG, "Interstitial ad showed")
                         }
-                    }
+                    } */
                 }
 
                 override fun onAdFailedToLoad(loadAdError: LoadAdError) {
@@ -648,6 +658,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun proceedAfterPermission() {
         showLoadingOverlay()
+        initializeInterstitialAds()
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
