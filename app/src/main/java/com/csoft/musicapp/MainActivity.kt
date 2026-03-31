@@ -426,7 +426,6 @@ class MainActivity : AppCompatActivity() {
             ad.show(this)
         } else {
             Log.d(TAG, "Interstitial ad not ready, continue immediately")
-            onComplete()
             loadInterstitialAd()
         }
     }
