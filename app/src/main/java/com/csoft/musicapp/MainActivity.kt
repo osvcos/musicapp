@@ -39,6 +39,7 @@ import com.google.android.gms.ads.AdRequest
 import com.google.android.gms.ads.FullScreenContentCallback
 import com.google.android.gms.ads.LoadAdError
 import com.google.android.gms.ads.MobileAds
+import com.google.android.gms.ads.RequestConfiguration
 import com.google.android.gms.ads.interstitial.InterstitialAd
 import com.google.android.gms.ads.interstitial.InterstitialAdLoadCallback
 
@@ -364,6 +365,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initializeInterstitialAds() {
+        // Inform Google Mobile Ads that the app targets a user under the age of consent.
+        // Esto aplica para audiencias menores de edad y cumple con las políticas de consentimiento.
+        val requestConfiguration = RequestConfiguration.Builder()
+            .setTagForUnderAgeOfConsent(RequestConfiguration.TAG_FOR_UNDER_AGE_OF_CONSENT_TRUE)
+            .build()
+        MobileAds.setRequestConfiguration(requestConfiguration)
+
         MobileAds.initialize(this) {
             Log.d(TAG, "MobileAds initialized")
         }
